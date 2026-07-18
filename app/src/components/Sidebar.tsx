@@ -1,0 +1,200 @@
+// Panel boczny: nawigacja po rozdziałach (dla książki) lub dokumencie
+// oraz po notatkach autora. Umożliwia dodawanie, zmianę nazwy i usuwanie plików.
+
+import { useState } from "react";
+import { useStore } from "../store/useStore";
+import type { ActiveKind, FileRef } from "../types";
+
+export function Sidebar() {
+  const project = useStore((s) => s.project);
+  const active = useStore((s) => s.active);
+  const selectFile = useStore((s) => s.selectFile);
+  const createChapter = useStore((s) => s.createChapter);
+  const createNote = useStore((s) => s.createNote);
+  const removeRef = useStore((s) => s.removeRef);
+  const renameFile = useStore((s) => s.renameFile);
+  const closeProject = useStore((s) => s.closeProject);
+  const toggleSettings = useStore((s) => s.toggleSettings);
+
+  const [adding, setAdding] = useState<ActiveKind | null>(null);
+  const [newTitle, setNewTitle] = useState("");
+  // Aktualnie zmieniana nazwa (dwuklik na elemencie), null gdy nic nie edytujemy.
+  const [editing, setEditing] = useState<{ kind: ActiveKind; id: string } | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+
+  if (!project) return null;
+  const isBook = project.type === "book";
+
+  async function submitAdd() {
+    const title = newTitle.trim();
+    if (!title) return;
+    if (adding === "chapter") await createChapter(title);
+    else if (adding === "note") await createNote(title);
+    setNewTitle("");
+    setAdding(null);
+  }
+
+  function startRename(ref: FileRef, kind: ActiveKind) {
+    setEditing({ kind, id: ref.id });
+    setEditTitle(ref.title);
+  }
+
+  async function submitRename() {
+    if (!editing) return;
+    const title = editTitle.trim();
+    if (title) await renameFile(editing.kind, editing.id, title);
+    setEditing(null);
+  }
+
+  function renderItem(ref: FileRef, kind: ActiveKind) {
+    const isActive = active?.kind === kind && active.id === ref.id;
+    const isEditing = editing?.kind === kind && editing.id === ref.id;
+
+    if (isEditing) {
+      return (
+        <li key={ref.id} className="navitem navitem--active">
+          <input
+            className="navitem__edit"
+            autoFocus
+            value={editTitle}
+            onChange={(e) => setEditTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") submitRename();
+              if (e.key === "Escape") setEditing(null);
+            }}
+            onBlur={submitRename}
+          />
+        </li>
+      );
+    }
+
+    return (
+      <li key={ref.id} className={"navitem" + (isActive ? " navitem--active" : "")}>
+        <button
+          className="navitem__label"
+          onClick={() => selectFile(kind, ref.id)}
+          onDoubleClick={() => startRename(ref, kind)}
+          title="Double-click to rename"
+        >
+          {ref.title}
+        </button>
+        <button
+          className="navitem__rename"
+          title="Rename"
+          onClick={() => startRename(ref, kind)}
+        >
+          ✎
+        </button>
+        {/* Nie pozwalamy usunąć jedynego dokumentu w projekcie typu "document". */}
+        {!(kind === "chapter" && !isBook) && (
+          <button
+            className="navitem__del"
+            title="Delete"
+            onClick={() => removeRef(kind, ref.id)}
+          >
+            ✕
+          </button>
+        )}
+      </li>
+    );
+  }
+
+  return (
+    <aside className="sidebar">
+      <div className="sidebar__head">
+        <button className="sidebar__back" onClick={closeProject} title="Close project">
+          ‹
+        </button>
+        <div className="sidebar__project">
+          <span className="sidebar__type">{isBook ? "📚 Book" : "📄 Document"}</span>
+          <span className="sidebar__title">{project.title}</span>
+        </div>
+      </div>
+
+      <nav className="sidebar__nav">
+        <div className="sidebar__section">
+          <div className="sidebar__section-head">
+            <span>{isBook ? "Chapters" : "Document"}</span>
+            {isBook && (
+              <button
+                className="sidebar__add"
+                title="Add chapter"
+                onClick={() => { setAdding("chapter"); setNewTitle(""); }}
+              >
+                +
+              </button>
+            )}
+          </div>
+          <ul>{project.chapters.map((c) => renderItem(c, "chapter"))}</ul>
+          {adding === "chapter" && (
+            <AddInput
+              value={newTitle}
+              onChange={setNewTitle}
+              onSubmit={submitAdd}
+              onCancel={() => setAdding(null)}
+              placeholder="Chapter title"
+            />
+          )}
+        </div>
+
+        <div className="sidebar__section">
+          <div className="sidebar__section-head">
+            <span>Author's notes</span>
+            <button
+              className="sidebar__add"
+              title="Add note"
+              onClick={() => { setAdding("note"); setNewTitle(""); }}
+            >
+              +
+            </button>
+          </div>
+          <ul>{project.notes.map((n) => renderItem(n, "note"))}</ul>
+          {project.notes.length === 0 && adding !== "note" && (
+            <p className="sidebar__empty">e.g. worldbuilding, characters, bibliography</p>
+          )}
+          {adding === "note" && (
+            <AddInput
+              value={newTitle}
+              onChange={setNewTitle}
+              onSubmit={submitAdd}
+              onCancel={() => setAdding(null)}
+              placeholder="Note title"
+            />
+          )}
+        </div>
+      </nav>
+
+      <div className="sidebar__footer">
+        <button className="sidebar__settings" onClick={toggleSettings} title="Settings">
+          ⚙ Settings
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+interface AddInputProps {
+  value: string;
+  onChange: (v: string) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
+  placeholder: string;
+}
+
+function AddInput({ value, onChange, onSubmit, onCancel, placeholder }: AddInputProps) {
+  return (
+    <div className="addinput">
+      <input
+        autoFocus
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") onSubmit();
+          if (e.key === "Escape") onCancel();
+        }}
+        onBlur={onCancel}
+      />
+    </div>
+  );
+}
