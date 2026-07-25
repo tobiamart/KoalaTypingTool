@@ -1,7 +1,8 @@
-// Panel boczny: nawigacja po rozdziałach (dla książki) lub dokumencie
-// oraz po notatkach autora. Umożliwia dodawanie, zmianę nazwy i usuwanie plików.
+// Panel boczny: nawigacja po rozdziałach i notatkach autora.
+// Umożliwia dodawanie, zmianę nazwy i usuwanie plików.
 
 import { useState } from "react";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { useStore } from "../store/useStore";
 import type { ActiveKind, FileRef } from "../types";
 
@@ -13,6 +14,7 @@ export function Sidebar() {
   const createNote = useStore((s) => s.createNote);
   const removeRef = useStore((s) => s.removeRef);
   const renameFile = useStore((s) => s.renameFile);
+  const reorderRef = useStore((s) => s.reorderRef);
   const closeProject = useStore((s) => s.closeProject);
   const toggleSettings = useStore((s) => s.toggleSettings);
 
@@ -23,7 +25,6 @@ export function Sidebar() {
   const [editTitle, setEditTitle] = useState("");
 
   if (!project) return null;
-  const isBook = project.type === "book";
 
   async function submitAdd() {
     const title = newTitle.trim();
@@ -46,7 +47,17 @@ export function Sidebar() {
     setEditing(null);
   }
 
-  function renderItem(ref: FileRef, kind: ActiveKind) {
+  // Usunięcie kasuje plik z dysku bezpowrotnie — zawsze pytamy o potwierdzenie.
+  async function handleDelete(ref: FileRef, kind: ActiveKind) {
+    const what = kind === "chapter" ? "chapter" : "note";
+    const ok = await confirm(
+      `Delete the ${what} "${ref.title}"?\nThe file will be permanently removed from disk.`,
+      { title: "Delete " + what, kind: "warning" },
+    );
+    if (ok) await removeRef(kind, ref.id);
+  }
+
+  function renderItem(ref: FileRef, kind: ActiveKind, index: number, count: number) {
     const isActive = active?.kind === kind && active.id === ref.id;
     const isEditing = editing?.kind === kind && editing.id === ref.id;
 
@@ -79,22 +90,35 @@ export function Sidebar() {
           {ref.title}
         </button>
         <button
+          className="navitem__move"
+          title="Move up"
+          disabled={index === 0}
+          onClick={() => reorderRef(kind, ref.id, -1)}
+        >
+          ↑
+        </button>
+        <button
+          className="navitem__move"
+          title="Move down"
+          disabled={index === count - 1}
+          onClick={() => reorderRef(kind, ref.id, 1)}
+        >
+          ↓
+        </button>
+        <button
           className="navitem__rename"
           title="Rename"
           onClick={() => startRename(ref, kind)}
         >
           ✎
         </button>
-        {/* Nie pozwalamy usunąć jedynego dokumentu w projekcie typu "document". */}
-        {!(kind === "chapter" && !isBook) && (
-          <button
-            className="navitem__del"
-            title="Delete"
-            onClick={() => removeRef(kind, ref.id)}
-          >
-            ✕
-          </button>
-        )}
+        <button
+          className="navitem__del"
+          title="Delete"
+          onClick={() => handleDelete(ref, kind)}
+        >
+          ✕
+        </button>
       </li>
     );
   }
@@ -106,7 +130,7 @@ export function Sidebar() {
           ‹
         </button>
         <div className="sidebar__project">
-          <span className="sidebar__type">{isBook ? "📚 Book" : "📄 Document"}</span>
+          <span className="sidebar__type">📚 Project</span>
           <span className="sidebar__title">{project.title}</span>
         </div>
       </div>
@@ -114,18 +138,20 @@ export function Sidebar() {
       <nav className="sidebar__nav">
         <div className="sidebar__section">
           <div className="sidebar__section-head">
-            <span>{isBook ? "Chapters" : "Document"}</span>
-            {isBook && (
-              <button
-                className="sidebar__add"
-                title="Add chapter"
-                onClick={() => { setAdding("chapter"); setNewTitle(""); }}
-              >
-                +
-              </button>
-            )}
+            <span>Chapters</span>
+            <button
+              className="sidebar__add"
+              title="Add chapter"
+              onClick={() => { setAdding("chapter"); setNewTitle(""); }}
+            >
+              +
+            </button>
           </div>
-          <ul>{project.chapters.map((c) => renderItem(c, "chapter"))}</ul>
+          <ul>
+            {project.chapters.map((c, i) =>
+              renderItem(c, "chapter", i, project.chapters.length),
+            )}
+          </ul>
           {adding === "chapter" && (
             <AddInput
               value={newTitle}
@@ -148,7 +174,11 @@ export function Sidebar() {
               +
             </button>
           </div>
-          <ul>{project.notes.map((n) => renderItem(n, "note"))}</ul>
+          <ul>
+            {project.notes.map((n, i) =>
+              renderItem(n, "note", i, project.notes.length),
+            )}
+          </ul>
           {project.notes.length === 0 && adding !== "note" && (
             <p className="sidebar__empty">e.g. worldbuilding, characters, bibliography</p>
           )}

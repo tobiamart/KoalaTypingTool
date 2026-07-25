@@ -11,4 +11,6 @@
 
 - [ ] GitHub Actions — automatyczne budowanie (Windows / macOS / Linux)
 - [ ] Wersja macOS (`.dmg`)
-- [ ] Rozwiązać budowanie wersji release (Smart App Control / podpis aplikacji)
+- [ ] Podpis aplikacji (Azure Trusted Signing lub certyfikat OV/EV) — potrzebny
+      do dystrybucji: u użytkowników z włączonym Smart App Control / SmartScreen
+      niepodpisana aplikacja nie uruchomi się lub wywoła ostrzeżenia

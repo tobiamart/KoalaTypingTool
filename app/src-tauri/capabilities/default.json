@@ -5,6 +5,7 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "core:window:allow-destroy",
     "opener:default",
     "dialog:default",
     "fs:allow-read-text-file",
@@ -12,6 +13,7 @@
     "fs:allow-mkdir",
     "fs:allow-read-dir",
     "fs:allow-remove",
+    "fs:allow-rename",
     "fs:allow-exists",
     {
       "identifier": "fs:scope",

@@ -8,7 +8,6 @@ import type {
   FileRef,
   FontChoice,
   OpenProject,
-  ProjectType,
   RecentProject,
 } from "../types";
 import * as storage from "../lib/storage";
@@ -39,7 +38,6 @@ function rememberProject(project: OpenProject, prev: RecentProject[]): RecentPro
   const entry: RecentProject = {
     path: project.path,
     title: project.title,
-    type: project.type,
     openedAt: new Date().toISOString(),
   };
   const deduped = prev.filter((r) => r.path !== project.path);
@@ -65,16 +63,18 @@ interface AppState {
   /** Czy okno ustawień jest otwarte. */
   settingsOpen: boolean;
 
-  newProject: (parentDir: string, title: string, type: ProjectType) => Promise<void>;
+  newProject: (parentDir: string, title: string) => Promise<void>;
   openFolder: (path: string) => Promise<void>;
-  closeProject: () => void;
+  closeProject: () => Promise<void>;
   selectFile: (kind: ActiveKind, id: string) => Promise<void>;
   updateContent: (markdown: string) => void;
-  saveActive: () => Promise<void>;
+  /** Zapisuje aktywny plik. Zwraca false, gdy zapis się nie powiódł (błąd trafia do `error`). */
+  saveActive: () => Promise<boolean>;
   createChapter: (title: string) => Promise<string | null>;
   createNote: (title: string) => Promise<string | null>;
   removeRef: (kind: ActiveKind, id: string) => Promise<void>;
   renameFile: (kind: ActiveKind, id: string, title: string) => Promise<void>;
+  reorderRef: (kind: ActiveKind, id: string, delta: -1 | 1) => Promise<void>;
   clearError: () => void;
   toggleVerify: () => void;
   setEditorFont: (font: FontChoice) => void;
@@ -100,10 +100,10 @@ export const useStore = create<AppState>((set, get) => ({
   editorFont: loadFont(),
   settingsOpen: false,
 
-  newProject: async (parentDir, title, type) => {
+  newProject: async (parentDir, title) => {
     set({ loading: true, error: null });
     try {
-      const project = await storage.createProject(parentDir, title, type);
+      const project = await storage.createProject(parentDir, title);
       const recent = rememberProject(project, get().recent);
       const firstRef = project.chapters[0] ?? null;
       set({
@@ -140,21 +140,34 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  closeProject: () => {
+  closeProject: async () => {
+    // Nie zamykaj projektu, dopóki niezapisane zmiany nie trafią na dysk —
+    // inaczej ostatnie sekundy pisania przepadłyby bez ostrzeżenia.
+    if (get().dirty) {
+      const ok = await get().saveActive();
+      if (!ok) return;
+    }
     set({ project: null, active: null, content: "", dirty: false });
   },
 
   selectFile: async (kind, id) => {
     const { project, dirty } = get();
     if (!project) return;
-    // Zapisz bieżący plik zanim przełączysz, jeśli są zmiany.
-    if (dirty) await get().saveActive();
+    // Zapisz bieżący plik zanim przełączysz; przy nieudanym zapisie zostań na nim.
+    if (dirty) {
+      const ok = await get().saveActive();
+      if (!ok) return;
+    }
 
     const list = kind === "chapter" ? project.chapters : project.notes;
     const ref = list.find((r) => r.id === id);
     if (!ref) return;
-    const content = await storage.readFile(project, ref);
-    set({ active: { kind, id }, content, dirty: false });
+    try {
+      const content = await storage.readFile(project, ref);
+      set({ active: { kind, id }, content, dirty: false });
+    } catch (e) {
+      set({ error: String(e) });
+    }
   },
 
   updateContent: (markdown) => {
@@ -164,54 +177,89 @@ export const useStore = create<AppState>((set, get) => ({
   saveActive: async () => {
     const { project, active, content } = get();
     const ref = findRef(project, active);
-    if (!project || !ref) return;
-    await storage.writeFile(project, ref, content);
-    set({ dirty: false });
+    if (!project || !ref) return true;
+    try {
+      await storage.writeFile(project, ref, content);
+      set({ dirty: false });
+      return true;
+    } catch (e) {
+      // dirty zostaje true — pasek statusu nie skłamie, że zapisano.
+      set({ error: "Saving failed: " + String(e) });
+      return false;
+    }
   },
 
   createChapter: async (title) => {
     const { project } = get();
     if (!project) return null;
-    if (get().dirty) await get().saveActive();
-    const { project: updated, ref } = await storage.addChapter(project, title);
-    const content = await storage.readFile(updated, ref);
-    set({ project: updated, active: { kind: "chapter", id: ref.id }, content, dirty: false });
-    return ref.id;
+    if (get().dirty && !(await get().saveActive())) return null;
+    try {
+      const { project: updated, ref } = await storage.addChapter(project, title);
+      const content = await storage.readFile(updated, ref);
+      set({ project: updated, active: { kind: "chapter", id: ref.id }, content, dirty: false });
+      return ref.id;
+    } catch (e) {
+      set({ error: String(e) });
+      return null;
+    }
   },
 
   createNote: async (title) => {
     const { project } = get();
     if (!project) return null;
-    if (get().dirty) await get().saveActive();
-    const { project: updated, ref } = await storage.addNote(project, title);
-    const content = await storage.readFile(updated, ref);
-    set({ project: updated, active: { kind: "note", id: ref.id }, content, dirty: false });
-    return ref.id;
+    if (get().dirty && !(await get().saveActive())) return null;
+    try {
+      const { project: updated, ref } = await storage.addNote(project, title);
+      set({ project: updated, active: { kind: "note", id: ref.id }, content: "", dirty: false });
+      return ref.id;
+    } catch (e) {
+      set({ error: String(e) });
+      return null;
+    }
   },
 
   removeRef: async (kind, id) => {
     const { project, active } = get();
     if (!project) return;
-    const updated = await storage.deleteRef(project, kind, id);
-    // Jeśli usunięto aktywny plik, przełącz na pierwszy dostępny rozdział.
-    let patch: Partial<AppState> = { project: updated };
-    if (active && active.kind === kind && active.id === id) {
-      const fallback = updated.chapters[0] ?? null;
-      if (fallback) {
-        const content = await storage.readFile(updated, fallback);
-        patch = { ...patch, active: { kind: "chapter", id: fallback.id }, content, dirty: false };
-      } else {
-        patch = { ...patch, active: null, content: "", dirty: false };
+    try {
+      const updated = await storage.deleteRef(project, kind, id);
+      // Jeśli usunięto aktywny plik, przełącz na pierwszy dostępny rozdział.
+      let patch: Partial<AppState> = { project: updated };
+      if (active && active.kind === kind && active.id === id) {
+        const fallback = updated.chapters[0] ?? null;
+        if (fallback) {
+          const content = await storage.readFile(updated, fallback);
+          patch = { ...patch, active: { kind: "chapter", id: fallback.id }, content, dirty: false };
+        } else {
+          patch = { ...patch, active: null, content: "", dirty: false };
+        }
       }
+      set(patch);
+    } catch (e) {
+      set({ error: String(e) });
     }
-    set(patch);
   },
 
   renameFile: async (kind, id, title) => {
     const { project } = get();
     if (!project) return;
-    const updated = await storage.renameRef(project, kind, id, title);
-    set({ project: updated });
+    try {
+      const updated = await storage.renameRef(project, kind, id, title);
+      set({ project: updated });
+    } catch (e) {
+      set({ error: String(e) });
+    }
+  },
+
+  reorderRef: async (kind, id, delta) => {
+    const { project } = get();
+    if (!project) return;
+    try {
+      const updated = await storage.moveRef(project, kind, id, delta);
+      set({ project: updated });
+    } catch (e) {
+      set({ error: String(e) });
+    }
   },
 
   clearError: () => set({ error: null }),

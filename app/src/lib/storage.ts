@@ -7,14 +7,10 @@ import {
   mkdir,
   exists,
   remove,
+  rename,
 } from "@tauri-apps/plugin-fs";
 import { join } from "@tauri-apps/api/path";
-import type {
-  FileRef,
-  OpenProject,
-  ProjectManifest,
-  ProjectType,
-} from "../types";
+import type { FileRef, OpenProject, ProjectManifest } from "../types";
 
 const MANIFEST_NAME = "project.json";
 
@@ -60,7 +56,6 @@ export async function writeFile(
 /** Zapisuje manifest project.json na dysku. */
 export async function saveManifest(project: OpenProject): Promise<void> {
   const manifest: ProjectManifest = {
-    type: project.type,
     title: project.title,
     createdAt: project.createdAt,
     chapters: project.chapters,
@@ -88,7 +83,6 @@ export async function loadProject(folderPath: string): Promise<OpenProject> {
 export async function createProject(
   parentDir: string,
   title: string,
-  type: ProjectType,
 ): Promise<OpenProject> {
   const folderName = slugify(title);
   const projectPath = await join(parentDir, folderName);
@@ -99,38 +93,22 @@ export async function createProject(
 
   await mkdir(projectPath, { recursive: true });
   await mkdir(await join(projectPath, "notes"), { recursive: true });
+  await mkdir(await join(projectPath, "chapters"), { recursive: true });
 
-  const now = new Date().toISOString();
-  let chapters: FileRef[];
-
-  if (type === "book") {
-    await mkdir(await join(projectPath, "chapters"), { recursive: true });
-    const firstChapter: FileRef = {
-      id: crypto.randomUUID(),
-      title: "Chapter 1",
-      file: "chapters/01-chapter-1.md",
-    };
-    chapters = [firstChapter];
-    await writeTextFile(
-      await join(projectPath, ...firstChapter.file.split("/")),
-      "",
-    );
-  } else {
-    // document: pojedynczy plik główny
-    const mainDoc: FileRef = {
-      id: crypto.randomUUID(),
-      title: title,
-      file: "document.md",
-    };
-    chapters = [mainDoc];
-    await writeTextFile(await join(projectPath, "document.md"), "");
-  }
+  const firstChapter: FileRef = {
+    id: crypto.randomUUID(),
+    title: "Chapter 1",
+    file: "chapters/01-chapter-1.md",
+  };
+  await writeTextFile(
+    await join(projectPath, ...firstChapter.file.split("/")),
+    "",
+  );
 
   const project: OpenProject = {
-    type,
     title,
-    createdAt: now,
-    chapters,
+    createdAt: new Date().toISOString(),
+    chapters: [firstChapter],
     notes: [],
     path: projectPath,
   };
@@ -139,22 +117,34 @@ export async function createProject(
   return project;
 }
 
-/** Kolejny numer porządkowy dla nazwy pliku rozdziału (01, 02, ...). */
-function nextIndex(count: number): string {
-  return String(count + 1).padStart(2, "0");
+/** Dobiera wolną nazwę pliku — dokleja numer, dopóki trafia na istniejący plik.
+ *  Chroni przed nadpisaniem treści, gdy rozdziały/notatki mają ten sam tytuł. */
+async function freeFileName(
+  project: OpenProject,
+  build: (n: number) => string,
+  startAt: number,
+): Promise<string> {
+  for (let n = startAt; ; n++) {
+    const candidate = build(n);
+    if (!(await exists(await absPath(project, candidate)))) return candidate;
+  }
 }
 
-/** Dodaje nowy rozdział (tylko dla projektów typu "book"). Zwraca zaktualizowany projekt. */
+/** Dodaje nowy rozdział. Zwraca zaktualizowany projekt. */
 export async function addChapter(
   project: OpenProject,
   title: string,
 ): Promise<{ project: OpenProject; ref: FileRef }> {
-  const idx = nextIndex(project.chapters.length);
-  const ref: FileRef = {
-    id: crypto.randomUUID(),
-    title,
-    file: `chapters/${idx}-${slugify(title)}.md`,
-  };
+  // Projekty założone w starszej wersji mogły nie mieć folderu chapters/.
+  await mkdir(await join(project.path, "chapters"), { recursive: true });
+
+  const slug = slugify(title);
+  const file = await freeFileName(
+    project,
+    (n) => `chapters/${String(n).padStart(2, "0")}-${slug}.md`,
+    project.chapters.length + 1,
+  );
+  const ref: FileRef = { id: crypto.randomUUID(), title, file };
   await writeTextFile(await absPath(project, ref.file), "");
   const updated: OpenProject = {
     ...project,
@@ -169,11 +159,15 @@ export async function addNote(
   project: OpenProject,
   title: string,
 ): Promise<{ project: OpenProject; ref: FileRef }> {
-  const ref: FileRef = {
-    id: crypto.randomUUID(),
-    title,
-    file: `notes/${slugify(title)}.md`,
-  };
+  await mkdir(await join(project.path, "notes"), { recursive: true });
+
+  const slug = slugify(title);
+  const file = await freeFileName(
+    project,
+    (n) => (n === 1 ? `notes/${slug}.md` : `notes/${slug}-${n}.md`),
+    1,
+  );
+  const ref: FileRef = { id: crypto.randomUUID(), title, file };
   await writeTextFile(await absPath(project, ref.file), "");
   const updated: OpenProject = {
     ...project,
@@ -205,19 +199,70 @@ export async function deleteRef(
   return updated;
 }
 
-/** Zmienia tytuł rozdziału lub notatki w manifeście (nazwa pliku pozostaje bez zmian). */
+/** Zmienia tytuł rozdziału lub notatki i dostosowuje nazwę pliku na dysku,
+ *  żeby nazwy plików nie rozjeżdżały się z tytułami widocznymi w UI.
+ *  Numer porządkowy rozdziału (prefiks "NN-") zostaje zachowany. */
 export async function renameRef(
   project: OpenProject,
   kind: "chapter" | "note",
   id: string,
   newTitle: string,
 ): Promise<OpenProject> {
-  const rename = (list: FileRef[]) =>
-    list.map((r) => (r.id === id ? { ...r, title: newTitle } : r));
+  const list = kind === "chapter" ? project.chapters : project.notes;
+  const current = list.find((r) => r.id === id);
+  if (!current) return project;
+
+  const slug = slugify(newTitle);
+  let newFile = current.file;
+
+  // Docelowa nazwa pliku wynikająca z nowego tytułu.
+  let desired: (n: number) => string;
+  if (kind === "chapter") {
+    const prefix =
+      current.file.match(/^chapters\/(\d+)-/)?.[1] ??
+      String(list.indexOf(current) + 1).padStart(2, "0");
+    desired = (n) =>
+      n === 1
+        ? `chapters/${prefix}-${slug}.md`
+        : `chapters/${prefix}-${slug}-${n}.md`;
+  } else {
+    desired = (n) => (n === 1 ? `notes/${slug}.md` : `notes/${slug}-${n}.md`);
+  }
+
+  if (desired(1) !== current.file) {
+    newFile = await freeFileName(project, desired, 1);
+    const oldPath = await absPath(project, current.file);
+    // Plik mógł zniknąć z dysku (usunięty ręcznie) — wtedy tylko aktualizujemy
+    // manifest; treść odtworzy się przy najbliższym zapisie.
+    if (await exists(oldPath)) {
+      await rename(oldPath, await absPath(project, newFile));
+    }
+  }
+
+  const apply = (l: FileRef[]) =>
+    l.map((r) => (r.id === id ? { ...r, title: newTitle, file: newFile } : r));
   const updated: OpenProject =
     kind === "chapter"
-      ? { ...project, chapters: rename(project.chapters) }
-      : { ...project, notes: rename(project.notes) };
+      ? { ...project, chapters: apply(project.chapters) }
+      : { ...project, notes: apply(project.notes) };
+  await saveManifest(updated);
+  return updated;
+}
+
+/** Przesuwa rozdział lub notatkę o jedną pozycję w górę (-1) lub w dół (+1). */
+export async function moveRef(
+  project: OpenProject,
+  kind: "chapter" | "note",
+  id: string,
+  delta: -1 | 1,
+): Promise<OpenProject> {
+  const list = [...(kind === "chapter" ? project.chapters : project.notes)];
+  const i = list.findIndex((r) => r.id === id);
+  const j = i + delta;
+  if (i < 0 || j < 0 || j >= list.length) return project;
+  [list[i], list[j]] = [list[j], list[i]];
+  const updated: OpenProject =
+    kind === "chapter" ? { ...project, chapters: list } : { ...project, notes: list };
   await saveManifest(updated);
   return updated;
 }

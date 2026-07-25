@@ -22,6 +22,7 @@ export function VerificationPanel() {
 
   const [status, setStatus] = useState<Status>("idle");
   const [issues, setIssues] = useState<Issue[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   const activeRef = findRef(project, active);
   const canCheck = !!activeRef && status !== "checking";
@@ -30,14 +31,22 @@ export function VerificationPanel() {
     if (!project) return;
     setStatus("checking");
     setIssues([]);
-    // Zbierz notatki autora jako kontekst dla AI.
-    const notes: { title: string; content: string }[] = [];
-    for (const n of project.notes) {
-      notes.push({ title: n.title, content: await storage.readFile(project, n) });
+    setError(null);
+    // Błąd (odczyt notatki, w przyszłości sieć do serwera proxy) nie może
+    // zostawić panelu w wiecznym stanie "Checking…".
+    try {
+      // Zbierz notatki autora jako kontekst dla AI.
+      const notes: { title: string; content: string }[] = [];
+      for (const n of project.notes) {
+        notes.push({ title: n.title, content: await storage.readFile(project, n) });
+      }
+      const result = await verifyText({ text: content, notes });
+      setIssues(result.issues);
+      setStatus("done");
+    } catch (e) {
+      setError(String(e));
+      setStatus("idle");
     }
-    const result = await verifyText({ text: content, notes });
-    setIssues(result.issues);
-    setStatus("done");
   }
 
   return (
@@ -57,7 +66,8 @@ export function VerificationPanel() {
       </div>
 
       <div className="verify__body">
-        {status === "idle" && (
+        {error && <p className="verify__error">⚠ Verification failed: {error}</p>}
+        {status === "idle" && !error && (
           <p className="verify__placeholder">
             Click "Check text" to analyze the current file.
           </p>

@@ -1,9 +1,6 @@
 // Typy domenowe aplikacji Koala.
 
-/** Typ tworzonego projektu. */
-export type ProjectType = "book" | "document";
-
-/** Referencja do pojedynczego pliku treści w projekcie (rozdział, dokument lub notatka). */
+/** Referencja do pojedynczego pliku treści w projekcie (rozdział lub notatka). */
 export interface FileRef {
   /** Unikalny identyfikator (UUID) — stabilny nawet przy zmianie tytułu/nazwy pliku. */
   id: string;
@@ -15,12 +12,11 @@ export interface FileRef {
 
 /** Zawartość pliku project.json — trwały opis projektu na dysku. */
 export interface ProjectManifest {
-  type: ProjectType;
   title: string;
   createdAt: string;
-  /** Dla "book" — lista rozdziałów; dla "document" — dokładnie jeden wpis (document.md). */
+  /** Rozdziały w kolejności wyświetlania. */
   chapters: FileRef[];
-  /** Notatki autora (opis świata, postacie, bibliografia) — wspólne dla obu typów. */
+  /** Notatki autora (opis świata, postacie, bibliografia) — kontekst dla weryfikacji AI. */
   notes: FileRef[];
 }
 
@@ -34,7 +30,6 @@ export interface OpenProject extends ProjectManifest {
 export interface RecentProject {
   path: string;
   title: string;
-  type: ProjectType;
   openedAt: string;
 }
 

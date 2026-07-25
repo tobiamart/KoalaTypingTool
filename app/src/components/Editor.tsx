@@ -1,9 +1,13 @@
 // Edytor tekstu oparty na TipTap z serializacją do Markdown.
-// Źródłem prawdy treści jest store (pole `content`); edytor synchronizuje się
-// z nim przy zmianie aktywnego pliku, a zmiany użytkownika spływają z powrotem
+// Źródłem prawdy treści jest store (pole `content`); zmiany użytkownika spływają
 // do store i są autozapisywane z opóźnieniem.
+//
+// Każdy plik dostaje WŁASNĄ instancję edytora (komponent FileEditor z `key`
+// po id pliku). Dzięki temu historia undo nie przecieka między plikami —
+// bez tego Ctrl+Z po przełączeniu pliku mógłby wstrzyknąć treść poprzedniego
+// pliku do bieżącego (i autozapis utrwaliłby to na dysku).
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useEditor, EditorContent, useEditorState } from "@tiptap/react";
 import type { Editor as TiptapEditor } from "@tiptap/react";
 import { Extension } from "@tiptap/core";
@@ -52,13 +56,30 @@ const BlockquoteExit = Extension.create({
 export function Editor() {
   const project = useStore((s) => s.project);
   const active = useStore((s) => s.active);
+  const activeRef = findRef(project, active);
+
+  if (!active || !activeRef) {
+    return (
+      <div className="editor editor--empty">
+        <p>Select a chapter or note from the left panel to begin.</p>
+      </div>
+    );
+  }
+
+  // `key` wymusza nową instancję edytora (i czystą historię undo) na każdy plik.
+  return <FileEditor key={active.kind + ":" + active.id} title={activeRef.title} />;
+}
+
+function FileEditor({ title }: { title: string }) {
   const dirty = useStore((s) => s.dirty);
   const content = useStore((s) => s.content);
   const editorFont = useStore((s) => s.editorFont);
   const updateContent = useStore((s) => s.updateContent);
   const saveActive = useStore((s) => s.saveActive);
 
-  const activeRef = findRef(project, active);
+  // Treść pliku w chwili montowania — selectFile wczytał ją do store przed
+  // przełączeniem, więc to zawsze aktualna zawartość z dysku.
+  const [initialContent] = useState(() => useStore.getState().content);
 
   const editor = useEditor({
     // Wyłączamy natychmiastowy render — w React 19 StrictMode (podwójny montaż)
@@ -71,18 +92,11 @@ export function Editor() {
       CharacterCount,
       Markdown.configure({ html: false, transformPastedText: true }),
     ],
-    content: "",
+    content: initialContent,
     onUpdate: ({ editor }) => {
       updateContent(getMarkdown(editor));
     },
   });
-
-  // Wczytaj treść do edytora przy zmianie aktywnego pliku (bez emitowania update).
-  useEffect(() => {
-    if (!editor) return;
-    const md = useStore.getState().content;
-    editor.commands.setContent(md, { emitUpdate: false });
-  }, [editor, active?.kind, active?.id]);
 
   // Autozapis: 800 ms po ostatniej zmianie.
   useEffect(() => {
@@ -92,7 +106,7 @@ export function Editor() {
   }, [content, dirty, saveActive]);
 
   // Reaktywny odczyt liczników — odświeża się przy każdej zmianie dokumentu,
-  // także po przełączeniu pliku (setContent), inaczej licznik zostaje w tyle.
+  // inaczej licznik zostaje w tyle (TipTap 3 nie re-renderuje komponentów sam).
   const counts = useEditorState({
     editor,
     selector: (ctx) => ({
@@ -101,14 +115,6 @@ export function Editor() {
     }),
   });
 
-  if (!activeRef) {
-    return (
-      <div className="editor editor--empty">
-        <p>Select a chapter or note from the left panel to begin.</p>
-      </div>
-    );
-  }
-
   const words = counts?.words ?? 0;
   const chars = counts?.chars ?? 0;
 
@@ -116,7 +122,7 @@ export function Editor() {
     <div className={"editor editor--font-" + editorFont}>
       <EditorToolbar editor={editor} />
       <div className="editor__scroll">
-        <div className="editor__title">{activeRef.title}</div>
+        <div className="editor__title">{title}</div>
         <EditorContent editor={editor} className="editor__content" />
       </div>
       <div className="editor__status">

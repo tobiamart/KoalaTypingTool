@@ -6,8 +6,8 @@
 
 ## Czym jest Koala
 
-Aplikacja **desktopowa** (Tauri) do pisania **książek** i pojedynczych **dokumentów**
-(np. prac naukowych) z funkcją **weryfikacji AI** (fact-checking).
+Aplikacja **desktopowa** (Tauri) do pisania długich tekstów podzielonych na
+**rozdziały**, z funkcją **weryfikacji AI** (fact-checking).
 
 Cel funkcji AI: po kliknięciu przycisku tekst jest sprawdzany pod kątem
 (1) spójności z resztą treści, (2) poprawności logicznej wg zasad świata z notatek,
@@ -23,23 +23,25 @@ Cel funkcji AI: po kliknięciu przycisku tekst jest sprawdzany pod kątem
 
 Aplikacja jest w podkatalogu **`app/`**. Backend Rust w `app/src-tauri/`.
 
-## Typy projektów i przechowywanie
+## Struktura projektu i przechowywanie
 
-Użytkownik wybiera na ekranie startowym jeden z dwóch typów:
+**Jest tylko jeden typ projektu** (decyzja z 2026-07-25 — wcześniej istniał też typ
+`document` z pojedynczym plikiem; został usunięty dla uproszczenia):
 
-- **`book`** — wiele rozdziałów, każdy osobny plik `.md` w `chapters/`
-- **`document`** — pojedynczy `document.md`
+- **rozdziały** — wiele plików `.md` w `chapters/`
+- **notatki autora** w `notes/` (opis świata, postacie, bibliografia) — kompendium
+  i kontekst dla AI
 
-Oba mają **notatki autora** w `notes/` (opis świata, postacie, bibliografia) —
-będą kompendium/kontekstem dla AI.
+Pojedynczy dokument (np. praca naukowa) to po prostu projekt z jednym rozdziałem.
 
 **Przechowywanie: pliki Markdown na dysku** (świadomie zamiast SQLite — własność
 danych, backup, brak vendor lock-in). Folder projektu ma `project.json` (manifest:
-typ, tytuł, kolejność rozdziałów, lista notatek).
+tytuł, `createdAt`, kolejność rozdziałów, lista notatek — **bez** pola `type`).
+Stare manifesty z `type` wczytują się dalej; pole znika przy pierwszym zapisie.
 
 ## Kluczowe pliki frontendu (`app/src/`)
 
-- `types.ts` — modele domenowe (ProjectType, FileRef, ProjectManifest, OpenProject, FontChoice…)
+- `types.ts` — modele domenowe (FileRef, ProjectManifest, OpenProject, FontChoice…)
 - `lib/storage.ts` — I/O plików przez plugin-fs (createProject, loadProject, addChapter,
   addNote, renameRef, deleteRef…); `slugify()` transliteruje polskie znaki
 - `lib/ai.ts` — `verifyText()` to na razie **ATRAPA** zwracająca przykładowe dane;
@@ -49,6 +51,15 @@ typ, tytuł, kolejność rozdziałów, lista notatek).
 - `components/` — StartScreen, Sidebar, Editor, EditorToolbar, VerificationPanel, Settings
 - `styles.css` — ciemny minimalistyczny motyw (near-black z eukaliptusowym odcieniem,
   akcent szałwiowa zieleń)
+- `lib/storage.test.ts` — testy vitest warstwy dyskowej (`npm test`); pilnują
+  scenariuszy utraty treści (kolizje nazw, rename na dysku, kolejność)
+
+**Zabezpieczenia przed utratą tekstu** (nie osłabiać przy zmianach): każdy plik ma
+własną instancję edytora (`key` w `Editor.tsx` — inaczej undo przecieka między
+plikami); usuwanie pyta o potwierdzenie (`confirm` z plugin-dialog); zamknięcie
+okna dopycha zapis (`onCloseRequested` w `App.tsx` + `core:window:allow-destroy`
+w capabilities); `saveActive` zwraca boolean i błędy zapisu lądują w `error`
+(pływający baner w workspace).
 
 Rust (`app/src-tauri/`): tylko init pluginów (opener, dialog, fs) — brak własnych komend.
 Uprawnienia w `capabilities/default.json` (scope `$HOME/**`).
@@ -91,15 +102,22 @@ Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments "-ar
 $env:Path = $env:Path + ';' + [Environment]::GetEnvironmentVariable('Path','User') + ';' + [Environment]::GetEnvironmentVariable('Path','Machine')
 Set-Location '<repo>\app'
 npm install          # przy pierwszym uruchomieniu na nowym urządzeniu
-npm run tauri dev    # albo: npm run tauri build -- --debug
+npm run tauri dev    # albo: npm run tauri build
+npm test             # testy jednostkowe (vitest) — warstwa storage.ts
 ```
 
 Wymagania: Node, Rust (host MSVC), VS Build Tools 2022 z workloadem
 `Microsoft.VisualStudio.Workload.VCTools`. Świeży `node`/`cargo` nie są w PATH nowej
 sesji, dopóki nie doda się User+Machine PATH (jak wyżej).
 
-**Smart App Control (Windows 11)** blokuje `tauri build` release (os error 4551) —
-dlatego build używa `--debug`. Release wymagałby wyłączenia SAC lub podpisu aplikacji.
+**Smart App Control (Windows 11)** — **wyłączony przez użytkownika 2026-07-25**
+(`VerifiedAndReputablePolicyState = 0`; decyzja nieodwracalna bez reinstalacji
+Windows). Wcześniej blokował uruchamianie niepodpisanego `app.exe` (Event ID
+3077/3033 w logu `Microsoft-Windows-CodeIntegrity/Operational`) oraz build release
+(os error 4551). Po wyłączeniu **build release działa normalnie** — skrypty budują
+release (bez `--debug`). Podpis aplikacji (certyfikat / Azure Trusted Signing)
+pozostaje w TODO pod dystrybucję — u użytkowników z włączonym SAC niepodpisana
+aplikacja nie uruchomi się.
 
 ### macOS / Linux (planowane)
 
