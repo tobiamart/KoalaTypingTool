@@ -1,0 +1,12 @@
+# Konfiguracja Cloudflare Workera (serwer proxy AI dla Koali).
+# Lokalnie: `npm run dev` (wrangler dev, http://localhost:8787) — bez konta Cloudflare.
+# Produkcyjnie: `npm run deploy` + `wrangler secret put ANTHROPIC_API_KEY`.
+
+name = "koala-proxy"
+main = "src/index.ts"
+compatibility_date = "2026-07-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Klucz Anthropic NIE jest tu zapisany:
+#  - lokalnie: plik .dev.vars (gitignorowany), wzór w .dev.vars.example
+#  - produkcyjnie: `wrangler secret put ANTHROPIC_API_KEY`

@@ -25,6 +25,11 @@ app/src-tauri/gen/schemas/
 .env
 .env.*
 !.env.example
+# klucz Anthropic dla lokalnego serwera proxy (wrangler dev)
+.dev.vars
+
+# ── Cloudflare Workers (cache wranglera) ──
+.wrangler/
 
 # ── Logi ──
 logs/

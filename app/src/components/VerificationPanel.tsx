@@ -23,6 +23,8 @@ export function VerificationPanel() {
   const [status, setStatus] = useState<Status>("idle");
   const [issues, setIssues] = useState<Issue[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // true = serwer odpowiedział danymi przykładowymi (działa bez klucza API).
+  const [mockMode, setMockMode] = useState(false);
 
   const activeRef = findRef(project, active);
   const canCheck = !!activeRef && status !== "checking";
@@ -42,6 +44,7 @@ export function VerificationPanel() {
       }
       const result = await verifyText({ text: content, notes });
       setIssues(result.issues);
+      setMockMode(result.mock);
       setStatus("done");
     } catch (e) {
       setError(String(e));
@@ -90,9 +93,11 @@ export function VerificationPanel() {
           })}
       </div>
 
-      <div className="verify__disclaimer">
-        ⚠️ AI is not connected yet — results are sample data.
-      </div>
+      {status === "done" && mockMode && (
+        <div className="verify__disclaimer">
+          ⚠️ The server is running without an API key — results are sample data.
+        </div>
+      )}
     </section>
   );
 }

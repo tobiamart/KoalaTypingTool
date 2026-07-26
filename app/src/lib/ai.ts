@@ -1,9 +1,9 @@
-// Warstwa weryfikacji AI.
+// Warstwa weryfikacji AI — woła serwer proxy (Cloudflare Worker w server/).
 //
-// UWAGA: to jest na razie ATRAPA (mock). Docelowo `verifyText` wyśle tekst
-// rozdziału wraz z notatkami autora (kompendium) do naszego serwera proxy,
-// który dopiero woła Anthropic API z ukrytym kluczem. Tu zwracamy przykładowe
-// dane, żeby zbudować i przetestować interfejs bez backendu.
+// Klucz Anthropic API NIGDY nie jest w aplikacji desktopowej — zna go tylko
+// serwer. Lokalnie serwer działa na http://localhost:8787 (uruchamiany przez
+// server-dev.bat albo `npm run dev` w server/). Bez klucza po stronie serwera
+// odpowiedzi są przykładowe (pole `mock: true`).
 
 /** Kategoria wykrytego problemu. */
 export type IssueType = "grammar" | "consistency" | "logic";
@@ -21,52 +21,52 @@ export interface Issue {
 
 export interface VerifyResult {
   issues: Issue[];
+  /** true = serwer działa bez klucza API i zwrócił dane przykładowe. */
+  mock: boolean;
 }
 
 export interface VerifyParams {
-  /** Treść (Markdown) weryfikowanego rozdziału/dokumentu. */
+  /** Treść (Markdown) weryfikowanego rozdziału. */
   text: string;
   /** Notatki autora jako kontekst (opis świata, postacie itd.). */
   notes: { title: string; content: string }[];
 }
 
-/** Sztuczne opóźnienie, by zasymulować round-trip do serwera. */
-function delay(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
-}
+// TODO: po wdrożeniu Workera do Cloudflare podmienić na adres produkcyjny.
+const PROXY_URL = "http://localhost:8787";
 
-/**
- * Weryfikuje tekst pod kątem gramatyki, spójności i logiki.
- * ATRAPA — podmień na wywołanie serwera proxy (fetch do /verify).
- */
+// Długi rozdział + myślenie modelu potrafią trwać dziesiątki sekund.
+const TIMEOUT_MS = 180_000;
+
+/** Weryfikuje tekst pod kątem gramatyki, spójności i logiki (przez serwer proxy). */
 export async function verifyText(params: VerifyParams): Promise<VerifyResult> {
-  await delay(900);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-  if (!params.text.trim()) {
-    return { issues: [] };
+  try {
+    let res: Response;
+    try {
+      res = await fetch(`${PROXY_URL}/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(params),
+        signal: controller.signal,
+      });
+    } catch {
+      // Rozróżnij przekroczenie czasu od niedziałającego serwera.
+      if (controller.signal.aborted) {
+        throw new Error("Verification timed out. Try a shorter text.");
+      }
+      throw new Error(
+        "Cannot reach the verification server. Start it with server-dev.bat and try again.",
+      );
+    }
+
+    if (!res.ok) {
+      throw new Error(`Verification server error (HTTP ${res.status}).`);
+    }
+    return (await res.json()) as VerifyResult;
+  } finally {
+    clearTimeout(timer);
   }
-
-  // Przykładowe wyniki demonstracyjne (nie pochodzą z prawdziwej analizy).
-  const demo: Issue[] = [
-    {
-      type: "grammar",
-      fragment: "example sentence fragment",
-      description: "Possible punctuation error — a missing comma before the conjunction.",
-      suggestion: "Add a comma before \"which\".",
-    },
-    {
-      type: "consistency",
-      fragment: "character name",
-      description: "This character was previously introduced under a different name.",
-      suggestion: "Align the character's name with the \"Characters\" note.",
-    },
-    {
-      type: "logic",
-      fragment: "event description",
-      description: "This event contradicts a world rule described in the notes.",
-      suggestion: "Check consistency with the \"World rules\" note.",
-    },
-  ];
-
-  return { issues: demo };
 }

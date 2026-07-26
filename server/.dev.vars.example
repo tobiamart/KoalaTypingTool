@@ -1,0 +1,8 @@
+# Wzór lokalnej konfiguracji sekretów (wrangler dev czyta plik .dev.vars).
+# 1. Skopiuj ten plik jako .dev.vars (bez .example)
+# 2. Wklej swój klucz z https://console.anthropic.com
+# Plik .dev.vars jest gitignorowany — klucz NIGDY nie trafia do repo.
+#
+# Bez tego pliku serwer działa w trybie atrapy (przykładowe wyniki).
+
+ANTHROPIC_API_KEY=sk-ant-...

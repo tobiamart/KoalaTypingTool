@@ -44,8 +44,8 @@ Stare manifesty z `type` wczytują się dalej; pole znika przy pierwszym zapisie
 - `types.ts` — modele domenowe (FileRef, ProjectManifest, OpenProject, FontChoice…)
 - `lib/storage.ts` — I/O plików przez plugin-fs (createProject, loadProject, addChapter,
   addNote, renameRef, deleteRef…); `slugify()` transliteruje polskie znaki
-- `lib/ai.ts` — `verifyText()` to na razie **ATRAPA** zwracająca przykładowe dane;
-  do podmiany na `fetch` do serwera proxy. IssueType = `"grammar" | "consistency" | "logic"`
+- `lib/ai.ts` — `verifyText()` woła serwer proxy (`POST /verify`) z timeoutem
+  i rozróżnianiem błędów. IssueType = `"grammar" | "consistency" | "logic"`
 - `store/useStore.ts` — Zustand (otwarty projekt, aktywny plik, autozapis, verifyOpen,
   editorFont, settingsOpen)
 - `components/` — StartScreen, Sidebar, Editor, EditorToolbar, VerificationPanel, Settings
@@ -73,9 +73,23 @@ inaczej wartości zostają w tyle. `useEditor` ma `immediatelyRender: false`
 
 ## Bezpieczeństwo — TWARDA ZASADA
 
-**Klucz Anthropic API NIGDY nie trafia do aplikacji desktopowej.** Ma być wyłącznie
-na osobnym **serwerze proxy** (rozważany Cloudflare Worker + ewentualnie D1).
-Aplikacja woła tylko ten proxy. Serwer jeszcze nie zbudowany (jest w TODO).
+**Klucz Anthropic API NIGDY nie trafia do aplikacji desktopowej.** Żyje wyłącznie
+na **serwerze proxy** w `server/` (Cloudflare Worker + Hono). Aplikacja woła tylko
+ten proxy (`app/src/lib/ai.ts`, `PROXY_URL`).
+
+## Serwer proxy AI (`server/`)
+
+- **Cloudflare Worker + Hono**, endpoint `POST /verify` (`{text, notes}` →
+  `{issues, mock}`), `GET /` = health-check z trybem pracy.
+- **Dwutrybowy:** bez klucza → atrapa (`mock: true`, UI pokazuje disclaimer);
+  klucz w `server/.dev.vars` (gitignorowany, wzór w `.dev.vars.example`) →
+  prawdziwe wywołanie API Anthropic (`claude-opus-5`, structured outputs
+  ze schematem JSON, streaming + `finalMessage()`, server-side fallbacks).
+- **Lokalnie:** `server-dev.bat` w root albo `npm run dev` w `server/` →
+  `http://localhost:8787` (wrangler dev, bez konta Cloudflare).
+- **CORS** wpuszcza tylko originy okna Koali (`localhost:1420`, `tauri.localhost`).
+- **Deploy (TODO):** `npm run deploy` + `wrangler secret put ANTHROPIC_API_KEY`,
+  potem podmienić `PROXY_URL` w `app/src/lib/ai.ts`.
 
 ## Język
 

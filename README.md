@@ -10,6 +10,8 @@ is stored as plain **Markdown files on disk** — you own your data, no lock-in.
 
 - `app/src` — React frontend (editor, sidebar, verification panel)
 - `app/src-tauri` — Tauri (Rust) shell: window, plugins, permissions
+- `server/` — AI proxy (Cloudflare Worker + Hono); holds the API key,
+  the desktop app never sees it. Runs locally via `wrangler dev`
 - Each writing project is a folder with `project.json`, `chapters/*.md`, `notes/*.md`
 
 ## Development
@@ -18,8 +20,10 @@ Requirements: Node.js, Rust (MSVC toolchain on Windows), VS Build Tools 2022.
 
 On Windows, use the double-click scripts in the repo root:
 
-- `dev.bat` — run in development mode (hot reload)
+- `dev.bat` — run the app in development mode (hot reload)
 - `build.bat` — build the release installers
+- `server-dev.bat` — run the local AI proxy server (http://localhost:8787);
+  without an API key in `server/.dev.vars` it returns sample (mock) results
 
 Or manually:
 
@@ -33,6 +37,7 @@ npm test              # unit tests (vitest)
 
 ## Status
 
-Work in progress. The AI verification layer is currently a mock
-(`app/src/lib/ai.ts`) — it will call a proxy server that holds the API key
-(the key never ships inside the app). See `TODO.md` for the roadmap.
+Work in progress. The app calls the proxy in `server/` for AI verification;
+the Anthropic API key lives only on the server (locally in `server/.dev.vars`,
+in production as a Cloudflare secret) and never ships inside the app.
+See `TODO.md` for the roadmap.
