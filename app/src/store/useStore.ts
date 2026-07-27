@@ -82,6 +82,8 @@ interface AppState {
   clearError: () => void;
   toggleVerify: () => void;
   setIssues: (issues: Issue[]) => void;
+  /** Dokłada pojedynczy błąd (strumieniowe wyniki weryfikacji). */
+  addIssue: (issue: Issue) => void;
   /** Dodaje błąd do ignorowanych (plik ignored-issues.json) i chowa go z wyników. */
   ignoreIssue: (issue: Issue) => Promise<void>;
   setEditorFont: (font: FontChoice) => void;
@@ -277,6 +279,8 @@ export const useStore = create<AppState>((set, get) => ({
   toggleVerify: () => set((s) => ({ verifyOpen: !s.verifyOpen })),
 
   setIssues: (issues) => set({ issues }),
+
+  addIssue: (issue) => set((s) => ({ issues: [...s.issues, issue] })),
 
   ignoreIssue: async (issue) => {
     const { project, active } = get();

@@ -295,6 +295,22 @@ export async function addIgnoredIssue(
   return updated;
 }
 
+/** Usuwa wpis z ignorowanych (przywraca błąd — wróci przy kolejnym sprawdzeniu). */
+export async function removeIgnoredIssue(
+  project: OpenProject,
+  entry: IgnoredIssue,
+): Promise<IgnoredIssue[]> {
+  const list = await loadIgnoredIssues(project);
+  const updated = list.filter(
+    (e) => !(e.file === entry.file && e.type === entry.type && e.fragment === entry.fragment),
+  );
+  if (updated.length !== list.length) {
+    const path = await join(project.path, IGNORED_NAME);
+    await writeTextFile(path, JSON.stringify(updated, null, 2));
+  }
+  return updated;
+}
+
 /** Przesuwa rozdział lub notatkę o jedną pozycję w górę (-1) lub w dół (+1). */
 export async function moveRef(
   project: OpenProject,

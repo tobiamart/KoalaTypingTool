@@ -230,4 +230,15 @@ describe("ignored issues", () => {
     files.set(`${p.path}/ignored-issues.json`, "not json{");
     expect(await storage.loadIgnoredIssues(p)).toEqual([]);
   });
+
+  it("removeIgnoredIssue przywraca błąd (usuwa wpis, resztę zostawia)", async () => {
+    const p = await storage.createProject(PARENT, "Book");
+    const a = { file: "a.md", type: "grammar", fragment: "x" };
+    const b = { file: "a.md", type: "logic", fragment: "y" };
+    await storage.addIgnoredIssue(p, a);
+    await storage.addIgnoredIssue(p, b);
+    const list = await storage.removeIgnoredIssue(p, a);
+    expect(list).toEqual([b]);
+    expect(await storage.loadIgnoredIssues(p)).toEqual([b]);
+  });
 });

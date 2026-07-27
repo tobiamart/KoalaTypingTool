@@ -1,9 +1,9 @@
 // Prawy panel: weryfikacja AI aktywnego rozdziału/dokumentu.
 // Zbiera treść i notatki, wywołuje warstwę AI (na razie atrapę) i pokazuje wyniki.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useStore, findRef } from "../store/useStore";
-import { verifyText, type IssueType, type VerifyUsage } from "../lib/ai";
+import { verifyText, type Issue, type IssueType, type VerifyUsage } from "../lib/ai";
 import * as storage from "../lib/storage";
 
 /** Formatuje liczbę tokenów zwięźle: 850, 1.2k, 15k. */
@@ -29,6 +29,7 @@ export function VerificationPanel() {
   // Wyniki żyją w store — edytor podświetla z nich fragmenty.
   const issues = useStore((s) => s.issues);
   const setIssues = useStore((s) => s.setIssues);
+  const addIssue = useStore((s) => s.addIssue);
   const ignoreIssue = useStore((s) => s.ignoreIssue);
 
   const [status, setStatus] = useState<Status>("idle");
@@ -37,6 +38,32 @@ export function VerificationPanel() {
   const [mockMode, setMockMode] = useState(false);
   // Zużycie tokenów ostatniej weryfikacji (brak w trybie atrapy).
   const [usage, setUsage] = useState<VerifyUsage | null>(null);
+  // Podgląd ignorowanych błędów (cały projekt) — rozwijany na dole panelu.
+  const [ignoredOpen, setIgnoredOpen] = useState(false);
+  const [ignoredList, setIgnoredList] = useState<storage.IgnoredIssue[]>([]);
+
+  // Wczytaj listę przy otwarciu projektu (licznik na przycisku) i odświeżaj
+  // po każdym Ignore/Restore.
+  useEffect(() => {
+    if (!project) return;
+    let cancelled = false;
+    void storage.loadIgnoredIssues(project).then((list) => {
+      if (!cancelled) setIgnoredList(list);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [project]);
+
+  async function refreshIgnored() {
+    if (!project) return;
+    setIgnoredList(await storage.loadIgnoredIssues(project));
+  }
+
+  async function restoreIgnored(entry: storage.IgnoredIssue) {
+    if (!project) return;
+    setIgnoredList(await storage.removeIgnoredIssue(project, entry));
+  }
 
   const activeRef = findRef(project, active);
   const canCheck = !!activeRef && status !== "checking";
@@ -60,20 +87,26 @@ export function VerificationPanel() {
         if (active?.kind === "chapter" && ch.id === active.id) continue;
         chapters.push({ title: ch.title, content: await storage.readFile(project, ch) });
       }
-      const result = await verifyText({ text: content, notes, chapters });
-      // Odfiltruj błędy, które użytkownik wcześniej zignorował w tym pliku.
+      // Ignorowane błędy tego pliku — filtrowane na bieżąco ze strumienia.
       const activeRefNow = findRef(project, active);
       const ignored = await storage.loadIgnoredIssues(project);
-      const visible = result.issues.filter(
-        (issue) =>
-          !ignored.some(
-            (e) =>
-              e.file === activeRefNow?.file &&
-              e.type === issue.type &&
-              e.fragment === issue.fragment,
-          ),
-      );
-      setIssues(visible);
+      const isIgnored = (issue: Issue) =>
+        ignored.some(
+          (e) =>
+            e.file === activeRefNow?.file &&
+            e.type === issue.type &&
+            e.fragment === issue.fragment,
+        );
+
+      // Wyniki spływają strumieniem — każdy błąd trafia do store od razu
+      // (panel i podświetlenia w edytorze rosną na żywo). Gdyby użytkownik
+      // przełączył plik w trakcie, spóźnione wyniki nie mogą go zaśmiecić.
+      const startedFor = active;
+      const result = await verifyText({ text: content, notes, chapters }, (issue) => {
+        const nowActive = useStore.getState().active;
+        if (nowActive?.kind !== startedFor?.kind || nowActive?.id !== startedFor?.id) return;
+        if (!isIgnored(issue)) addIssue(issue);
+      });
       setMockMode(result.mock);
       setUsage(result.usage ?? null);
       setStatus("done");
@@ -106,11 +139,13 @@ export function VerificationPanel() {
             Click "Check text" to analyze the current file.
           </p>
         )}
-        {status === "checking" && <p className="verify__placeholder">Analyzing text…</p>}
+        {status === "checking" && issues.length === 0 && (
+          <p className="verify__placeholder">Analyzing text…</p>
+        )}
         {status === "done" && issues.length === 0 && (
           <p className="verify__ok">✓ No issues found.</p>
         )}
-        {status === "done" &&
+        {issues.length > 0 &&
           issues.map((issue, i) => {
             const meta = TYPE_META[issue.type];
             return (
@@ -120,7 +155,7 @@ export function VerificationPanel() {
                   <button
                     className="issue__ignore"
                     title="Ignore this issue (won't be reported again)"
-                    onClick={() => void ignoreIssue(issue)}
+                    onClick={() => void ignoreIssue(issue).then(refreshIgnored)}
                   >
                     Ignore
                   </button>
@@ -131,6 +166,45 @@ export function VerificationPanel() {
               </div>
             );
           })}
+        {status === "checking" && issues.length > 0 && (
+          <p className="verify__placeholder">Analyzing…</p>
+        )}
+      </div>
+
+      <div className="verify__ignored">
+        <button
+          className="verify__ignored-toggle"
+          onClick={() => setIgnoredOpen((v) => !v)}
+        >
+          {ignoredOpen ? "▾" : "▸"} Ignored issues ({ignoredList.length})
+        </button>
+        {ignoredOpen &&
+          (ignoredList.length === 0 ? (
+            <p className="verify__ignored-empty">Nothing ignored yet.</p>
+          ) : (
+            <div className="verify__ignored-list">
+              {ignoredList.map((e, i) => (
+                <div key={i} className="ignored-row">
+                  <div className="ignored-row__main">
+                    <span className={"ignored-row__type ignored-row__type--" + e.type}>
+                      {e.type}
+                    </span>
+                    <span className="ignored-row__fragment">"{e.fragment}"</span>
+                  </div>
+                  <div className="ignored-row__meta">
+                    <span className="ignored-row__file">{e.file}</span>
+                    <button
+                      className="issue__ignore"
+                      title="Stop ignoring — it will be reported again on the next check"
+                      onClick={() => void restoreIgnored(e)}
+                    >
+                      Restore
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))}
       </div>
 
       {status === "done" && usage && (

@@ -54,34 +54,83 @@ const PROXY_URL = "http://localhost:8787";
 // Długi rozdział + myślenie modelu potrafią trwać dziesiątki sekund.
 const TIMEOUT_MS = 180_000;
 
-/** Weryfikuje tekst pod kątem gramatyki, spójności i logiki (przez serwer proxy). */
-export async function verifyText(params: VerifyParams): Promise<VerifyResult> {
+/** Linia strumienia NDJSON z serwera (patrz server/src/index.ts). */
+type StreamMsg =
+  | { type: "start"; mock: boolean }
+  | { type: "issue"; issue: Issue }
+  | { type: "done"; usage?: VerifyUsage }
+  | { type: "error"; message: string };
+
+/**
+ * Weryfikuje tekst pod kątem gramatyki, spójności i logiki (przez serwer proxy).
+ * Serwer streamuje wyniki (NDJSON) — `onIssue` jest wołane dla każdego błędu
+ * od razu, gdy model go dokończy; zwracany Promise domyka się z kompletem.
+ */
+export async function verifyText(
+  params: VerifyParams,
+  onIssue?: (issue: Issue) => void,
+): Promise<VerifyResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
-    let res: Response;
-    try {
-      res = await fetch(`${PROXY_URL}/verify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(params),
-        signal: controller.signal,
-      });
-    } catch {
-      // Rozróżnij przekroczenie czasu od niedziałającego serwera.
-      if (controller.signal.aborted) {
-        throw new Error("Verification timed out. Try a shorter text.");
-      }
-      throw new Error(
-        "Cannot reach the verification server. Start it with server-dev.bat and try again.",
-      );
-    }
+    const res = await fetch(`${PROXY_URL}/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+      signal: controller.signal,
+    });
 
     if (!res.ok) {
       throw new Error(`Verification server error (HTTP ${res.status}).`);
     }
-    return (await res.json()) as VerifyResult;
+    if (!res.body) {
+      throw new Error("Empty response from the verification server.");
+    }
+
+    const issues: Issue[] = [];
+    let mock = false;
+    let usage: VerifyUsage | undefined;
+
+    const handleLine = (line: string) => {
+      if (!line.trim()) return;
+      const msg = JSON.parse(line) as StreamMsg;
+      if (msg.type === "start") mock = msg.mock;
+      else if (msg.type === "issue") {
+        issues.push(msg.issue);
+        onIssue?.(msg.issue);
+      } else if (msg.type === "done") usage = msg.usage;
+      else if (msg.type === "error") throw new Error(msg.message);
+    };
+
+    // Czytaj strumień linia po linii (NDJSON).
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let nl: number;
+      while ((nl = buf.indexOf("\n")) !== -1) {
+        handleLine(buf.slice(0, nl));
+        buf = buf.slice(nl + 1);
+      }
+    }
+    handleLine(buf);
+
+    return { issues, mock, usage };
+  } catch (e) {
+    // Rozróżnij przekroczenie czasu, padnięty serwer i błąd merytoryczny.
+    if (controller.signal.aborted) {
+      throw new Error("Verification timed out. Try a shorter text.");
+    }
+    if (e instanceof TypeError) {
+      throw new Error(
+        "Cannot reach the verification server. Start it with server-dev.bat and try again.",
+      );
+    }
+    throw e;
   } finally {
     clearTimeout(timer);
   }

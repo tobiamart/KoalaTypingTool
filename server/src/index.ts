@@ -13,6 +13,7 @@
 
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { stream } from "hono/streaming";
 import Anthropic from "@anthropic-ai/sdk";
 
 /** Zmienne środowiskowe Workera (lokalnie: .dev.vars, produkcyjnie: secret). */
@@ -49,13 +50,13 @@ interface VerifyUsage {
   output: number;
 }
 
-interface VerifyResponse {
-  issues: Issue[];
-  /** true = serwer działa bez klucza i zwrócił dane przykładowe. */
-  mock: boolean;
-  /** Zużycie tokenów — brak w trybie atrapy. */
-  usage?: VerifyUsage;
-}
+/** Linie strumienia NDJSON zwracanego przez POST /verify — błędy wypychane
+ *  pojedynczo, gdy tylko model dokończy dany obiekt (UI pokazuje je na żywo). */
+type StreamMsg =
+  | { type: "start"; mock: boolean }
+  | { type: "issue"; issue: Issue }
+  | { type: "done"; usage?: VerifyUsage }
+  | { type: "error"; message: string };
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -93,21 +94,40 @@ app.post("/verify", async (c) => {
 
   const hasKey = Boolean(c.env.ANTHROPIC_API_KEY);
 
-  if (!body.text.trim()) {
-    return c.json({ issues: [], mock: !hasKey } satisfies VerifyResponse);
-  }
+  // Odpowiedź to strumień NDJSON: start → issue* → done (albo error).
+  // Dzięki temu UI pokazuje błędy pojedynczo, w trakcie pracy modelu.
+  c.header("Content-Type", "application/x-ndjson; charset=utf-8");
+  return stream(c, async (s) => {
+    const send = async (msg: StreamMsg): Promise<void> => {
+      await s.writeln(JSON.stringify(msg));
+    };
+    await send({ type: "start", mock: !hasKey });
 
-  if (!hasKey) {
-    return c.json(mockVerify() satisfies VerifyResponse);
-  }
+    if (!body.text.trim()) {
+      await send({ type: "done" });
+      return;
+    }
 
-  try {
-    const { issues, usage } = await verifyWithClaude(c.env.ANTHROPIC_API_KEY!, body);
-    return c.json({ issues, mock: false, usage } satisfies VerifyResponse);
-  } catch (e) {
-    console.error("verify failed:", e);
-    return c.json({ error: "Verification failed on the AI server." }, 502);
-  }
+    if (!hasKey) {
+      // Atrapa z opóźnieniami — pozwala obejrzeć strumieniowe UI bez klucza.
+      for (const issue of MOCK_ISSUES) {
+        await s.sleep(350);
+        await send({ type: "issue", issue });
+      }
+      await send({ type: "done" });
+      return;
+    }
+
+    try {
+      const usage = await verifyWithClaude(c.env.ANTHROPIC_API_KEY!, body, (issue) =>
+        send({ type: "issue", issue }),
+      );
+      await send({ type: "done", usage });
+    } catch (e) {
+      console.error("verify failed:", e);
+      await send({ type: "error", message: "Verification failed on the AI server." });
+    }
+  });
 });
 
 export default app;
@@ -161,10 +181,58 @@ Rules:
 - Write "description" and "suggestion" in the same language as the analyzed text.
 - If there are no problems, return an empty issues list.`;
 
+/**
+ * Przyrostowy ekstraktor obiektów `issue` z częściowego JSON-a.
+ * Model streamuje `{"issues":[{...},{...}]}` kawałkami — obiekt issue zaczyna
+ * się, gdy głębokość klamer rośnie z 1 na 2, a kończy przy powrocie na 1.
+ * Śledzimy stan stringów (cudzysłowy, escape), żeby klamry w treści opisów
+ * nie psuły liczenia. push() zwraca obiekty dokończone w danym kawałku.
+ */
+function makeIssueExtractor(): { push: (chunk: string) => Issue[] } {
+  let buf = "";
+  let inString = false;
+  let escape = false;
+  let depth = 0;
+  let start = -1;
+
+  return {
+    push(chunk: string): Issue[] {
+      const completed: Issue[] = [];
+      for (const ch of chunk) {
+        buf += ch;
+        if (inString) {
+          if (escape) escape = false;
+          else if (ch === "\\") escape = true;
+          else if (ch === '"') inString = false;
+          continue;
+        }
+        if (ch === '"') inString = true;
+        else if (ch === "{") {
+          depth++;
+          if (depth === 2) start = buf.length - 1;
+        } else if (ch === "}") {
+          if (depth === 2 && start !== -1) {
+            try {
+              completed.push(JSON.parse(buf.slice(start)) as Issue);
+            } catch {
+              // Niedomknięty/uszkodzony obiekt — pominięcie jest bezpieczne,
+              // finalna odpowiedź i tak przechodzi przez structured outputs.
+            }
+            start = -1;
+          }
+          depth--;
+        }
+      }
+      return completed;
+    },
+  };
+}
+
 async function verifyWithClaude(
   apiKey: string,
   { text, notes, chapters }: VerifyRequest,
-): Promise<{ issues: Issue[]; usage: VerifyUsage }> {
+  onIssue: (issue: Issue) => Promise<void>,
+): Promise<VerifyUsage> {
   const client = new Anthropic({ apiKey });
 
   const notesBlock =
@@ -187,7 +255,7 @@ async function verifyWithClaude(
   //
   // Streaming: długi rozdział + myślenie modelu potrafią trwać dziesiątki
   // sekund — stream zapobiega timeoutom HTTP, a finalMessage() składa całość.
-  const stream = client.messages.stream({
+  const msgStream = client.messages.stream({
     model: "claude-sonnet-5",
     max_tokens: 16000,
     output_config: {
@@ -225,7 +293,22 @@ async function verifyWithClaude(
     ],
   });
 
-  const message = await stream.finalMessage();
+  // Wypychaj każdy dokończony obiekt issue od razu, w trakcie strumienia.
+  const extractor = makeIssueExtractor();
+  for await (const event of msgStream) {
+    if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+      for (const issue of extractor.push(event.delta.text)) {
+        await onIssue(issue);
+      }
+    }
+  }
+
+  const message = await msgStream.finalMessage();
+
+  // Klasyfikatory mogły odrzucić żądanie — wtedy nie ufamy treści.
+  if (message.stop_reason === "refusal") {
+    throw new Error("Request declined by safety filters.");
+  }
 
   // Zużycie tokenów — do logu i do UI (cache_read > 0 oznacza,
   // że prefiks poszedł za ~10% ceny).
@@ -239,50 +322,33 @@ async function verifyWithClaude(
     `usage: input=${usage.input} cache_write=${usage.cacheWrite}` +
       ` cache_read=${usage.cacheRead} output=${usage.output}`,
   );
-
-  // Klasyfikatory mogły odrzucić żądanie mimo fallbacków — nie czytaj wtedy content.
-  if (message.stop_reason === "refusal") {
-    throw new Error("Request declined by safety filters.");
-  }
-
-  const textBlock = message.content.find((b) => b.type === "text");
-  if (!textBlock || textBlock.type !== "text") {
-    throw new Error("Empty model response.");
-  }
-
-  const parsed = JSON.parse(textBlock.text) as { issues: Issue[] };
-  return { issues: parsed.issues, usage };
+  return usage;
 }
 
 /* ------------------------------------------------------------------ */
 /* Tryb MOCK — dane przykładowe (serwer bez klucza)                    */
 /* ------------------------------------------------------------------ */
 
-function mockVerify(): VerifyResponse {
-  return {
-    mock: true,
-    issues: [
-      {
-        type: "grammar",
-        fragment: "example sentence fragment",
-        description:
-          "Possible punctuation error — a missing comma before the conjunction.",
-        suggestion: 'Add a comma before "which".',
-      },
-      {
-        type: "consistency",
-        fragment: "character name",
-        description:
-          "This character was previously introduced under a different name.",
-        suggestion: 'Align the character\'s name with the "Characters" note.',
-      },
-      {
-        type: "logic",
-        fragment: "event description",
-        description:
-          "This event contradicts a world rule described in the notes.",
-        suggestion: 'Check consistency with the "World rules" note.',
-      },
-    ],
-  };
-}
+const MOCK_ISSUES: Issue[] = [
+  {
+    type: "grammar",
+    fragment: "example sentence fragment",
+    description:
+      "Possible punctuation error — a missing comma before the conjunction.",
+    suggestion: 'Add a comma before "which".',
+  },
+  {
+    type: "consistency",
+    fragment: "character name",
+    description:
+      "This character was previously introduced under a different name.",
+    suggestion: 'Align the character\'s name with the "Characters" note.',
+  },
+  {
+    type: "logic",
+    fragment: "event description",
+    description:
+      "This event contradicts a world rule described in the notes.",
+    suggestion: 'Check consistency with the "World rules" note.',
+  },
+];

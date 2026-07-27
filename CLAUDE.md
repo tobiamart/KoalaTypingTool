@@ -50,7 +50,8 @@ Stare manifesty z `type` wczytują się dalej; pole znika przy pierwszym zapisie
   (czysta logika, testy w `highlight.test.ts`); Editor podświetla je dekoracjami
   ProseMirror (nie zmieniają dokumentu → nie brudzą undo/autozapisu), tooltip
   po najechaniu; wyniki weryfikacji żyją w store (`issues`), przycisk „Ignore"
-  na karcie błędu dopisuje wpis do ignorowanych
+  na karcie błędu dopisuje wpis do ignorowanych; rozwijany podgląd „Ignored
+  issues" na dole panelu (cały projekt) z przyciskiem „Restore"
 - `lib/ai.ts` — `verifyText()` woła serwer proxy (`POST /verify`) z timeoutem
   i rozróżnianiem błędów. IssueType = `"grammar" | "consistency" | "logic"`
 - `store/useStore.ts` — Zustand (otwarty projekt, aktywny plik, autozapis, verifyOpen,
@@ -86,8 +87,11 @@ ten proxy (`app/src/lib/ai.ts`, `PROXY_URL`).
 
 ## Serwer proxy AI (`server/`)
 
-- **Cloudflare Worker + Hono**, endpoint `POST /verify` (`{text, notes}` →
-  `{issues, mock}`), `GET /` = health-check z trybem pracy.
+- **Cloudflare Worker + Hono**, endpoint `POST /verify` (`{text, notes, chapters}`),
+  `GET /` = health-check z trybem pracy. Odpowiedź to **strumień NDJSON**:
+  `start` → `issue`* → `done` (albo `error`) — serwer parsuje JSON modelu
+  przyrostowo (`makeIssueExtractor`) i wypycha każdy dokończony błąd od razu;
+  UI pokazuje wyniki na żywo, jeden po drugim.
 - **Dwutrybowy:** bez klucza → atrapa (`mock: true`, UI pokazuje disclaimer);
   klucz w `server/.dev.vars` (gitignorowany, wzór w `.dev.vars.example`) →
   prawdziwe wywołanie API Anthropic (`claude-sonnet-5`, structured outputs
