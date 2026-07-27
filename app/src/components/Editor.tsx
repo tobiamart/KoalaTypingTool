@@ -11,12 +11,17 @@ import { useEffect, useState } from "react";
 import { useEditor, EditorContent, useEditorState } from "@tiptap/react";
 import type { Editor as TiptapEditor } from "@tiptap/react";
 import { Extension } from "@tiptap/core";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import type { Node as PMNode } from "@tiptap/pm/model";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import CharacterCount from "@tiptap/extension-character-count";
 import { Markdown } from "tiptap-markdown";
 import { useStore, findRef } from "../store/useStore";
 import { EditorToolbar } from "./EditorToolbar";
+import { findFragmentRanges, type TextSegment } from "../lib/highlight";
+import type { Issue } from "../lib/ai";
 
 /**
  * Pobiera Markdown z edytora. tiptap-markdown (pisany pod TipTap 2) nie dostarcza
@@ -27,6 +32,77 @@ function getMarkdown(editor: TiptapEditor): string {
     markdown: { getMarkdown: () => string };
   };
   return storage.markdown.getMarkdown();
+}
+
+/* ------------------------------------------------------------------ */
+/* Podświetlanie błędów fact-checku                                     */
+/* ------------------------------------------------------------------ */
+
+const issueHighlightKey = new PluginKey<DecorationSet>("issueHighlight");
+
+/** Buduje dekoracje podświetleń z wyników weryfikacji. */
+function buildIssueDecorations(doc: PMNode, issues: Issue[]): DecorationSet {
+  // Zbierz węzły tekstowe dokumentu z ich pozycjami.
+  const segments: TextSegment[] = [];
+  doc.descendants((node, pos) => {
+    if (node.isText && node.text) segments.push({ text: node.text, pos });
+    return true;
+  });
+
+  const decorations: Decoration[] = [];
+  for (const issue of issues) {
+    for (const range of findFragmentRanges(segments, issue.fragment)) {
+      decorations.push(
+        Decoration.inline(range.from, range.to, {
+          class: "issue-hl issue-hl--" + issue.type,
+          "data-issue-type": issue.type,
+          "data-issue-desc": issue.description,
+          "data-issue-sugg": issue.suggestion,
+        }),
+      );
+    }
+  }
+  return DecorationSet.create(doc, decorations);
+}
+
+/**
+ * Rozszerzenie podświetlające fragmenty zgłoszone przez fact-check.
+ * Dekoracje ProseMirror NIE zmieniają dokumentu — podświetlenia nie brudzą
+ * treści, historii undo ani autozapisu. Nowe wyniki wjeżdżają przez
+ * tr.setMeta(issueHighlightKey, issues); przy zwykłej edycji istniejące
+ * dekoracje są mapowane na nowe pozycje.
+ */
+const IssueHighlight = Extension.create({
+  name: "issueHighlight",
+  addProseMirrorPlugins() {
+    return [
+      new Plugin<DecorationSet>({
+        key: issueHighlightKey,
+        state: {
+          init: () => DecorationSet.empty,
+          apply(tr, old) {
+            const issues = tr.getMeta(issueHighlightKey) as Issue[] | undefined;
+            if (issues !== undefined) return buildIssueDecorations(tr.doc, issues);
+            return old.map(tr.mapping, tr.doc);
+          },
+        },
+        props: {
+          decorations(state) {
+            return issueHighlightKey.getState(state);
+          },
+        },
+      }),
+    ];
+  },
+});
+
+/** Stan tooltipa nad podświetleniem. */
+interface IssueTip {
+  x: number;
+  y: number;
+  type: string;
+  desc: string;
+  sugg: string;
 }
 
 /**
@@ -76,6 +152,10 @@ function FileEditor({ title }: { title: string }) {
   const editorFont = useStore((s) => s.editorFont);
   const updateContent = useStore((s) => s.updateContent);
   const saveActive = useStore((s) => s.saveActive);
+  const issues = useStore((s) => s.issues);
+
+  // Tooltip nad podświetlonym błędem (null = ukryty).
+  const [tip, setTip] = useState<IssueTip | null>(null);
 
   // Treść pliku w chwili montowania — selectFile wczytał ją do store przed
   // przełączeniem, więc to zawsze aktualna zawartość z dysku.
@@ -88,6 +168,7 @@ function FileEditor({ title }: { title: string }) {
     extensions: [
       StarterKit,
       BlockquoteExit,
+      IssueHighlight,
       Placeholder.configure({ placeholder: "Start writing…" }),
       CharacterCount,
       Markdown.configure({ html: false, transformPastedText: true }),
@@ -97,6 +178,14 @@ function FileEditor({ title }: { title: string }) {
       updateContent(getMarkdown(editor));
     },
   });
+
+  // Przekaż wyniki weryfikacji do pluginu dekoracji (także pustą listę —
+  // czyści podświetlenia po zmianie pliku albo zignorowaniu błędu).
+  useEffect(() => {
+    if (!editor) return;
+    editor.view.dispatch(editor.state.tr.setMeta(issueHighlightKey, issues));
+    setTip(null);
+  }, [editor, issues]);
 
   // Autozapis: 800 ms po ostatniej zmianie.
   useEffect(() => {
@@ -118,13 +207,37 @@ function FileEditor({ title }: { title: string }) {
   const words = counts?.words ?? 0;
   const chars = counts?.chars ?? 0;
 
+  // Tooltip przez delegację zdarzeń — dekoracje to zwykłe spany w DOM.
+  function onMouseOver(e: React.MouseEvent) {
+    const el = (e.target as HTMLElement).closest(".issue-hl");
+    if (!(el instanceof HTMLElement)) return;
+    const rect = el.getBoundingClientRect();
+    setTip({
+      x: rect.left,
+      y: rect.bottom + 6,
+      type: el.dataset.issueType ?? "",
+      desc: el.dataset.issueDesc ?? "",
+      sugg: el.dataset.issueSugg ?? "",
+    });
+  }
+  function onMouseOut(e: React.MouseEvent) {
+    if ((e.target as HTMLElement).closest(".issue-hl")) setTip(null);
+  }
+
   return (
     <div className={"editor editor--font-" + editorFont}>
       <EditorToolbar editor={editor} />
-      <div className="editor__scroll">
+      <div className="editor__scroll" onMouseOver={onMouseOver} onMouseOut={onMouseOut}>
         <div className="editor__title">{title}</div>
         <EditorContent editor={editor} className="editor__content" />
       </div>
+      {tip && (
+        <div className="issue-tip" style={{ left: tip.x, top: tip.y }}>
+          <div className={"issue-tip__type issue-tip__type--" + tip.type}>{tip.type}</div>
+          <div className="issue-tip__desc">{tip.desc}</div>
+          {tip.sugg && <div className="issue-tip__sugg">💡 {tip.sugg}</div>}
+        </div>
+      )}
       <div className="editor__status">
         <span>{words} words · {chars} characters</span>
         <span>{dirty ? "Saving…" : "Saved"}</span>

@@ -194,3 +194,40 @@ describe("deleteRef", () => {
     expect(files.has(`${p.path}/${ref.file}`)).toBe(false);
   });
 });
+
+describe("ignored issues", () => {
+  it("brak pliku = pusta lista", async () => {
+    const p = await storage.createProject(PARENT, "Book");
+    expect(await storage.loadIgnoredIssues(p)).toEqual([]);
+  });
+
+  it("dodaje wpis i zapisuje plik ignored-issues.json", async () => {
+    const p = await storage.createProject(PARENT, "Book");
+    const entry = { file: "chapters/01-chapter-1.md", type: "grammar", fragment: "Ona poszli" };
+    const list = await storage.addIgnoredIssue(p, entry);
+    expect(list).toEqual([entry]);
+    expect(await storage.loadIgnoredIssues(p)).toEqual([entry]);
+    expect(files.has(`${p.path}/ignored-issues.json`)).toBe(true);
+  });
+
+  it("nie duplikuje identycznych wpisów", async () => {
+    const p = await storage.createProject(PARENT, "Book");
+    const entry = { file: "chapters/01-chapter-1.md", type: "logic", fragment: "słońce na zachodzie" };
+    await storage.addIgnoredIssue(p, entry);
+    const list = await storage.addIgnoredIssue(p, entry);
+    expect(list).toHaveLength(1);
+  });
+
+  it("rozróżnia wpisy po pliku, typie i cytacie", async () => {
+    const p = await storage.createProject(PARENT, "Book");
+    await storage.addIgnoredIssue(p, { file: "a.md", type: "grammar", fragment: "x" });
+    const list = await storage.addIgnoredIssue(p, { file: "b.md", type: "grammar", fragment: "x" });
+    expect(list).toHaveLength(2);
+  });
+
+  it("uszkodzony plik traktuje jak pustą listę", async () => {
+    const p = await storage.createProject(PARENT, "Book");
+    files.set(`${p.path}/ignored-issues.json`, "not json{");
+    expect(await storage.loadIgnoredIssues(p)).toEqual([]);
+  });
+});

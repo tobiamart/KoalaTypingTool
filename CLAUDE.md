@@ -43,7 +43,14 @@ Stare manifesty z `type` wczytują się dalej; pole znika przy pierwszym zapisie
 
 - `types.ts` — modele domenowe (FileRef, ProjectManifest, OpenProject, FontChoice…)
 - `lib/storage.ts` — I/O plików przez plugin-fs (createProject, loadProject, addChapter,
-  addNote, renameRef, deleteRef…); `slugify()` transliteruje polskie znaki
+  addNote, renameRef, deleteRef…); `slugify()` transliteruje polskie znaki;
+  ignorowane błędy fact-checku w `ignored-issues.json` w folderze projektu
+  (klucz: plik + typ + cytat)
+- `lib/highlight.ts` — mapowanie cytatów z fact-checku na zakresy dokumentu
+  (czysta logika, testy w `highlight.test.ts`); Editor podświetla je dekoracjami
+  ProseMirror (nie zmieniają dokumentu → nie brudzą undo/autozapisu), tooltip
+  po najechaniu; wyniki weryfikacji żyją w store (`issues`), przycisk „Ignore"
+  na karcie błędu dopisuje wpis do ignorowanych
 - `lib/ai.ts` — `verifyText()` woła serwer proxy (`POST /verify`) z timeoutem
   i rozróżnianiem błędów. IssueType = `"grammar" | "consistency" | "logic"`
 - `store/useStore.ts` — Zustand (otwarty projekt, aktywny plik, autozapis, verifyOpen,
@@ -83,8 +90,11 @@ ten proxy (`app/src/lib/ai.ts`, `PROXY_URL`).
   `{issues, mock}`), `GET /` = health-check z trybem pracy.
 - **Dwutrybowy:** bez klucza → atrapa (`mock: true`, UI pokazuje disclaimer);
   klucz w `server/.dev.vars` (gitignorowany, wzór w `.dev.vars.example`) →
-  prawdziwe wywołanie API Anthropic (`claude-opus-5`, structured outputs
-  ze schematem JSON, streaming + `finalMessage()`, server-side fallbacks).
+  prawdziwe wywołanie API Anthropic (`claude-sonnet-5`, structured outputs
+  ze schematem JSON, streaming + `finalMessage()`, prompt caching z TTL 1h —
+  prefiks: system prompt + notatki + pozostałe rozdziały; weryfikowany rozdział
+  poza cache). Żądanie `/verify` niesie `{text, notes, chapters}` — pozostałe
+  rozdziały są kontekstem spójności.
 - **Lokalnie:** `server-dev.bat` w root albo `npm run dev` w `server/` →
   `http://localhost:8787` (wrangler dev, bez konta Cloudflare).
 - **CORS** wpuszcza tylko originy okna Koali (`localhost:1420`, `tauri.localhost`).

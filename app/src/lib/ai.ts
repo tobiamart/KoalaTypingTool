@@ -19,10 +19,24 @@ export interface Issue {
   suggestion: string;
 }
 
+/** Zużycie tokenów pojedynczej weryfikacji (zwracane przez serwer w trybie live). */
+export interface VerifyUsage {
+  /** Tokeny wejścia pełnopłatne (poza cache). */
+  input: number;
+  /** Tokeny zapisane do cache. */
+  cacheWrite: number;
+  /** Tokeny odczytane z cache (~10% ceny). */
+  cacheRead: number;
+  /** Tokeny wyjścia (myślenie + odpowiedź). */
+  output: number;
+}
+
 export interface VerifyResult {
   issues: Issue[];
   /** true = serwer działa bez klucza API i zwrócił dane przykładowe. */
   mock: boolean;
+  /** Zużycie tokenów — brak w trybie atrapy. */
+  usage?: VerifyUsage;
 }
 
 export interface VerifyParams {
@@ -30,6 +44,8 @@ export interface VerifyParams {
   text: string;
   /** Notatki autora jako kontekst (opis świata, postacie itd.). */
   notes: { title: string; content: string }[];
+  /** Pozostałe rozdziały jako kontekst spójności (bez weryfikowanego). */
+  chapters: { title: string; content: string }[];
 }
 
 // TODO: po wdrożeniu Workera do Cloudflare podmienić na adres produkcyjny.

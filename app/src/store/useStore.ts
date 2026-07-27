@@ -10,6 +10,7 @@ import type {
   OpenProject,
   RecentProject,
 } from "../types";
+import type { Issue } from "../lib/ai";
 import * as storage from "../lib/storage";
 
 const RECENT_KEY = "koala.recentProjects";
@@ -58,6 +59,9 @@ interface AppState {
   recent: RecentProject[];
   /** Czy panel weryfikacji (fact-check) jest wysunięty. */
   verifyOpen: boolean;
+  /** Wyniki ostatniej weryfikacji aktywnego pliku — źródło podświetleń
+   *  w edytorze i kart w panelu. Czyszczone przy zmianie pliku. */
+  issues: Issue[];
   /** Wybrany krój czcionki obszaru pisania. */
   editorFont: FontChoice;
   /** Czy okno ustawień jest otwarte. */
@@ -77,6 +81,9 @@ interface AppState {
   reorderRef: (kind: ActiveKind, id: string, delta: -1 | 1) => Promise<void>;
   clearError: () => void;
   toggleVerify: () => void;
+  setIssues: (issues: Issue[]) => void;
+  /** Dodaje błąd do ignorowanych (plik ignored-issues.json) i chowa go z wyników. */
+  ignoreIssue: (issue: Issue) => Promise<void>;
   setEditorFont: (font: FontChoice) => void;
   toggleSettings: () => void;
 }
@@ -97,6 +104,7 @@ export const useStore = create<AppState>((set, get) => ({
   error: null,
   recent: loadRecent(),
   verifyOpen: false,
+  issues: [],
   editorFont: loadFont(),
   settingsOpen: false,
 
@@ -112,6 +120,7 @@ export const useStore = create<AppState>((set, get) => ({
         active: firstRef ? { kind: "chapter", id: firstRef.id } : null,
         content: "",
         dirty: false,
+        issues: [],
         loading: false,
       });
     } catch (e) {
@@ -133,6 +142,7 @@ export const useStore = create<AppState>((set, get) => ({
         active: firstRef ? { kind: "chapter", id: firstRef.id } : null,
         content,
         dirty: false,
+        issues: [],
         loading: false,
       });
     } catch (e) {
@@ -147,7 +157,7 @@ export const useStore = create<AppState>((set, get) => ({
       const ok = await get().saveActive();
       if (!ok) return;
     }
-    set({ project: null, active: null, content: "", dirty: false });
+    set({ project: null, active: null, content: "", dirty: false, issues: [] });
   },
 
   selectFile: async (kind, id) => {
@@ -164,7 +174,7 @@ export const useStore = create<AppState>((set, get) => ({
     if (!ref) return;
     try {
       const content = await storage.readFile(project, ref);
-      set({ active: { kind, id }, content, dirty: false });
+      set({ active: { kind, id }, content, dirty: false, issues: [] });
     } catch (e) {
       set({ error: String(e) });
     }
@@ -196,7 +206,7 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       const { project: updated, ref } = await storage.addChapter(project, title);
       const content = await storage.readFile(updated, ref);
-      set({ project: updated, active: { kind: "chapter", id: ref.id }, content, dirty: false });
+      set({ project: updated, active: { kind: "chapter", id: ref.id }, content, dirty: false, issues: [] });
       return ref.id;
     } catch (e) {
       set({ error: String(e) });
@@ -210,7 +220,7 @@ export const useStore = create<AppState>((set, get) => ({
     if (get().dirty && !(await get().saveActive())) return null;
     try {
       const { project: updated, ref } = await storage.addNote(project, title);
-      set({ project: updated, active: { kind: "note", id: ref.id }, content: "", dirty: false });
+      set({ project: updated, active: { kind: "note", id: ref.id }, content: "", dirty: false, issues: [] });
       return ref.id;
     } catch (e) {
       set({ error: String(e) });
@@ -229,9 +239,9 @@ export const useStore = create<AppState>((set, get) => ({
         const fallback = updated.chapters[0] ?? null;
         if (fallback) {
           const content = await storage.readFile(updated, fallback);
-          patch = { ...patch, active: { kind: "chapter", id: fallback.id }, content, dirty: false };
+          patch = { ...patch, active: { kind: "chapter", id: fallback.id }, content, dirty: false, issues: [] };
         } else {
-          patch = { ...patch, active: null, content: "", dirty: false };
+          patch = { ...patch, active: null, content: "", dirty: false, issues: [] };
         }
       }
       set(patch);
@@ -265,6 +275,29 @@ export const useStore = create<AppState>((set, get) => ({
   clearError: () => set({ error: null }),
 
   toggleVerify: () => set((s) => ({ verifyOpen: !s.verifyOpen })),
+
+  setIssues: (issues) => set({ issues }),
+
+  ignoreIssue: async (issue) => {
+    const { project, active } = get();
+    const ref = findRef(project, active);
+    if (!project || !ref) return;
+    try {
+      await storage.addIgnoredIssue(project, {
+        file: ref.file,
+        type: issue.type,
+        fragment: issue.fragment,
+      });
+      // Schowaj wszystkie zgłoszenia o tym samym typie i cytacie.
+      set((s) => ({
+        issues: s.issues.filter(
+          (i) => !(i.type === issue.type && i.fragment === issue.fragment),
+        ),
+      }));
+    } catch (e) {
+      set({ error: String(e) });
+    }
+  },
 
   setEditorFont: (font) => {
     localStorage.setItem(FONT_KEY, font);

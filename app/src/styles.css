@@ -367,12 +367,40 @@ button { font-family: inherit; cursor: pointer; color: inherit; }
 .issue--grammar { border-left-color: var(--grammar); }
 .issue--consistency { border-left-color: var(--consistency); }
 .issue--logic { border-left-color: var(--logic); }
+.issue__head { display: flex; align-items: center; justify-content: space-between; }
+.issue__ignore {
+  background: transparent; border: 1px solid var(--border); color: var(--faint);
+  font-size: 0.65rem; padding: 0.1rem 0.45rem; border-radius: 4px;
+  transition: color 0.15s, border-color 0.15s;
+}
+.issue__ignore:hover { color: var(--text); border-color: var(--muted); }
+
+/* Podświetlenia błędów w tekście edytora (dekoracje ProseMirror). */
+.issue-hl { border-bottom: 2px solid; border-radius: 2px; cursor: help; }
+.issue-hl--grammar { border-bottom-color: var(--grammar); background: color-mix(in srgb, var(--grammar) 14%, transparent); }
+.issue-hl--consistency { border-bottom-color: var(--consistency); background: color-mix(in srgb, var(--consistency) 14%, transparent); }
+.issue-hl--logic { border-bottom-color: var(--logic); background: color-mix(in srgb, var(--logic) 14%, transparent); }
+
+/* Tooltip nad podświetleniem. */
+.issue-tip {
+  position: fixed; z-index: 50; max-width: 340px;
+  background: var(--panel, #1b1f1d); border: 1px solid var(--border);
+  border-radius: 8px; padding: 0.55rem 0.7rem; font-size: 0.8rem;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45); pointer-events: none; line-height: 1.45;
+}
+.issue-tip__type { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; margin-bottom: 0.25rem; }
+.issue-tip__type--grammar { color: var(--grammar); }
+.issue-tip__type--consistency { color: var(--consistency); }
+.issue-tip__type--logic { color: var(--logic); }
+.issue-tip__desc { color: var(--text); }
+.issue-tip__sugg { color: var(--accent); margin-top: 0.3rem; }
 .issue__type { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; color: var(--muted); }
 .issue__fragment { font-family: var(--font-read); font-style: italic; margin: 0.3rem 0; color: var(--text); font-size: 0.92rem; }
 .issue__desc { font-size: 0.83rem; margin-bottom: 0.4rem; color: var(--text); line-height: 1.5; }
 .issue__suggestion { font-size: 0.82rem; color: var(--accent); line-height: 1.5; }
 
 .verify__disclaimer { padding: 0.65rem 0.9rem; font-size: 0.72rem; color: var(--faint); border-top: 1px solid var(--border); line-height: 1.5; }
+.verify__usage { padding: 0.65rem 0.9rem; font-size: 0.72rem; color: var(--faint); border-top: 1px solid var(--border); font-variant-numeric: tabular-nums; }
 
 /* ---------- Stopka sidebara / ustawienia ---------- */
 .sidebar__footer { padding: 0.5rem; border-top: 1px solid var(--border); }

@@ -33,12 +33,28 @@ interface Issue {
 interface VerifyRequest {
   text: string;
   notes: { title: string; content: string }[];
+  /** Pozostałe rozdziały jako kontekst spójności (opcjonalne — starsze wersje aplikacji ich nie wysyłają). */
+  chapters?: { title: string; content: string }[];
+}
+
+/** Zużycie tokenów pojedynczej weryfikacji — do wyświetlenia w UI. */
+interface VerifyUsage {
+  /** Tokeny wejścia pełnopłatne (poza cache). */
+  input: number;
+  /** Tokeny zapisane do cache (stawka 1,25–2×). */
+  cacheWrite: number;
+  /** Tokeny odczytane z cache (stawka ~0,1×). */
+  cacheRead: number;
+  /** Tokeny wyjścia (myślenie + odpowiedź). */
+  output: number;
 }
 
 interface VerifyResponse {
   issues: Issue[];
   /** true = serwer działa bez klucza i zwrócił dane przykładowe. */
   mock: boolean;
+  /** Zużycie tokenów — brak w trybie atrapy. */
+  usage?: VerifyUsage;
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -71,6 +87,9 @@ app.post("/verify", async (c) => {
   if (typeof body.text !== "string" || !Array.isArray(body.notes)) {
     return c.json({ error: "Expected { text: string, notes: [] }." }, 400);
   }
+  if (body.chapters !== undefined && !Array.isArray(body.chapters)) {
+    return c.json({ error: "Expected chapters to be an array." }, 400);
+  }
 
   const hasKey = Boolean(c.env.ANTHROPIC_API_KEY);
 
@@ -83,8 +102,8 @@ app.post("/verify", async (c) => {
   }
 
   try {
-    const issues = await verifyWithClaude(c.env.ANTHROPIC_API_KEY!, body);
-    return c.json({ issues, mock: false } satisfies VerifyResponse);
+    const { issues, usage } = await verifyWithClaude(c.env.ANTHROPIC_API_KEY!, body);
+    return c.json({ issues, mock: false, usage } satisfies VerifyResponse);
   } catch (e) {
     console.error("verify failed:", e);
     return c.json({ error: "Verification failed on the AI server." }, 502);
@@ -126,23 +145,26 @@ const OUTPUT_SCHEMA = {
 
 const SYSTEM_PROMPT = `You are a meticulous editorial assistant inside a book-writing app.
 You receive a chapter (or document) in Markdown, plus the author's notes
-(worldbuilding, characters, bibliography) that define the rules of the work.
+(worldbuilding, characters, bibliography) that define the rules of the work,
+and the other chapters of the same work as context.
 
-Find concrete problems in the text and classify each as exactly one of:
+Find concrete problems in the verified text and classify each as exactly one of:
 - "grammar" — grammar, spelling or punctuation errors
-- "consistency" — internal contradictions within the text itself
+- "consistency" — contradictions within the verified text itself OR with the
+  other chapters (names, facts, timeline, character traits)
 - "logic" — contradictions with facts or rules established in the author's notes
 
 Rules:
+- Report only problems in the verified text — never in the notes or other chapters.
 - Report only genuine, specific problems. No stylistic preferences, no praise.
-- "fragment" must be an exact quote from the text (max ~15 words).
+- "fragment" must be an exact quote from the verified text (max ~15 words).
 - Write "description" and "suggestion" in the same language as the analyzed text.
 - If there are no problems, return an empty issues list.`;
 
 async function verifyWithClaude(
   apiKey: string,
-  { text, notes }: VerifyRequest,
-): Promise<Issue[]> {
+  { text, notes, chapters }: VerifyRequest,
+): Promise<{ issues: Issue[]; usage: VerifyUsage }> {
   const client = new Anthropic({ apiKey });
 
   const notesBlock =
@@ -150,28 +172,73 @@ async function verifyWithClaude(
       ? notes.map((n) => `### ${n.title}\n\n${n.content}`).join("\n\n")
       : "(no author notes provided)";
 
+  const chaptersBlock =
+    chapters && chapters.length > 0
+      ? chapters.map((ch) => `### ${ch.title}\n\n${ch.content}`).join("\n\n")
+      : "(no other chapters)";
+
+  // Prompt caching: cache to dopasowanie prefiksu (unieważnienie kaskaduje
+  // w dół), więc treść układamy tak, by duże bloki były przed zmiennymi:
+  // system prompt → pozostałe rozdziały (duże) → notatki (małe) → weryfikowany
+  // rozdział (zmienny, bez cache). Osobne breakpointy na rozdziałach i
+  // notatkach sprawiają, że edycja notatki przepisuje w cache tylko notatki —
+  // rozdziały dalej czytają się za ~10% ceny. TTL 1h, bo między sprawdzeniami
+  // podczas pisania mija zwykle więcej niż 5 minut.
+  //
   // Streaming: długi rozdział + myślenie modelu potrafią trwać dziesiątki
   // sekund — stream zapobiega timeoutom HTTP, a finalMessage() składa całość.
-  const stream = client.beta.messages.stream({
-    model: "claude-opus-5",
+  const stream = client.messages.stream({
+    model: "claude-sonnet-5",
     max_tokens: 16000,
-    // Awaryjne przełączenie na inny model, gdyby klasyfikatory bezpieczeństwa
-    // odrzuciły żądanie (zalecana domyślna konfiguracja dla claude-opus-5).
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
     output_config: {
       format: { type: "json_schema", schema: OUTPUT_SCHEMA },
     },
-    system: SYSTEM_PROMPT,
+    // TTL 1h także tutaj — API wymaga, by dłuższy TTL nie następował po krótszym
+    // (kolejność przetwarzania: tools → system → messages).
+    system: [
+      {
+        type: "text",
+        text: SYSTEM_PROMPT,
+        cache_control: { type: "ephemeral", ttl: "1h" },
+      },
+    ],
     messages: [
       {
         role: "user",
-        content: `## Author's notes\n\n${notesBlock}\n\n## Text to verify\n\n${text}`,
+        content: [
+          {
+            type: "text",
+            text: `## Other chapters (context)\n\n${chaptersBlock}`,
+            cache_control: { type: "ephemeral", ttl: "1h" },
+          },
+          {
+            type: "text",
+            text: `## Author's notes\n\n${notesBlock}`,
+            cache_control: { type: "ephemeral", ttl: "1h" },
+          },
+          {
+            type: "text",
+            text: `## Text to verify\n\n${text}`,
+          },
+        ],
       },
     ],
   });
 
   const message = await stream.finalMessage();
+
+  // Zużycie tokenów — do logu i do UI (cache_read > 0 oznacza,
+  // że prefiks poszedł za ~10% ceny).
+  const usage: VerifyUsage = {
+    input: message.usage.input_tokens,
+    cacheWrite: message.usage.cache_creation_input_tokens ?? 0,
+    cacheRead: message.usage.cache_read_input_tokens ?? 0,
+    output: message.usage.output_tokens,
+  };
+  console.log(
+    `usage: input=${usage.input} cache_write=${usage.cacheWrite}` +
+      ` cache_read=${usage.cacheRead} output=${usage.output}`,
+  );
 
   // Klasyfikatory mogły odrzucić żądanie mimo fallbacków — nie czytaj wtedy content.
   if (message.stop_reason === "refusal") {
@@ -184,7 +251,7 @@ async function verifyWithClaude(
   }
 
   const parsed = JSON.parse(textBlock.text) as { issues: Issue[] };
-  return parsed.issues;
+  return { issues: parsed.issues, usage };
 }
 
 /* ------------------------------------------------------------------ */

@@ -249,6 +249,52 @@ export async function renameRef(
   return updated;
 }
 
+/* ------------------------------------------------------------------ */
+/* Ignorowane błędy fact-checku                                        */
+/* ------------------------------------------------------------------ */
+
+const IGNORED_NAME = "ignored-issues.json";
+
+/** Wpis ignorowanego błędu — identyfikowany przez plik, typ i cytat.
+ *  (Opis pomijamy: model może go sformułować inaczej przy kolejnym sprawdzeniu,
+ *  a typ + dokładny cytat wystarczają do rozpoznania tego samego zgłoszenia.) */
+export interface IgnoredIssue {
+  /** Ścieżka względna pliku, którego dotyczy (np. "chapters/01-x.md"). */
+  file: string;
+  type: string;
+  fragment: string;
+}
+
+/** Wczytuje listę ignorowanych błędów projektu (brak pliku = pusta lista). */
+export async function loadIgnoredIssues(project: OpenProject): Promise<IgnoredIssue[]> {
+  const path = await join(project.path, IGNORED_NAME);
+  if (!(await exists(path))) return [];
+  try {
+    const parsed = JSON.parse(await readTextFile(path)) as unknown;
+    return Array.isArray(parsed) ? (parsed as IgnoredIssue[]) : [];
+  } catch {
+    // Uszkodzony plik nie może blokować weryfikacji — traktuj jak pusty.
+    return [];
+  }
+}
+
+/** Dodaje wpis do ignorowanych (bez duplikatów) i zapisuje plik na dysku. */
+export async function addIgnoredIssue(
+  project: OpenProject,
+  entry: IgnoredIssue,
+): Promise<IgnoredIssue[]> {
+  const list = await loadIgnoredIssues(project);
+  const dup = list.some(
+    (e) => e.file === entry.file && e.type === entry.type && e.fragment === entry.fragment,
+  );
+  const updated = dup ? list : [...list, entry];
+  if (!dup) {
+    const path = await join(project.path, IGNORED_NAME);
+    await writeTextFile(path, JSON.stringify(updated, null, 2));
+  }
+  return updated;
+}
+
 /** Przesuwa rozdział lub notatkę o jedną pozycję w górę (-1) lub w dół (+1). */
 export async function moveRef(
   project: OpenProject,
