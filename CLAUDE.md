@@ -10,8 +10,11 @@ Aplikacja **desktopowa** (Tauri) do pisania długich tekstów podzielonych na
 **rozdziały**, z funkcją **weryfikacji AI** (fact-checking).
 
 Cel funkcji AI: po kliknięciu przycisku tekst jest sprawdzany pod kątem
-(1) spójności z resztą treści, (2) poprawności logicznej wg zasad świata z notatek,
-(3) gramatyki. Wyniki pokazywane w chowanym panelu po prawej.
+(1) spójności faktów z resztą treści **i notatkami** (`consistency`),
+(2) logiki zdarzeń — niemożliwe sekwencje, złamanie zasad świata (`logic`),
+(3) gramatyki. Podział przebiega wg *natury* błędu, nie wg źródła: niezgodność
+faktu = `consistency` niezależnie od tego, czy fakt padł w notatkach czy
+w innym rozdziale. Wyniki pokazywane w chowanym panelu po prawej.
 
 ## Stos technologiczny
 

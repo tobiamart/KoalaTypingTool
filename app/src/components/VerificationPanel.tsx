@@ -129,7 +129,7 @@ export function VerificationPanel() {
       </div>
 
       <div className="verify__note">
-        Checks grammar, consistency with the other chapters, and logical alignment with the author's notes.
+        Checks grammar, factual consistency with the other chapters and your notes, and whether the events hold together logically.
       </div>
 
       <div className="verify__body">
@@ -140,7 +140,10 @@ export function VerificationPanel() {
           </p>
         )}
         {status === "checking" && issues.length === 0 && (
-          <p className="verify__placeholder">Analyzing text…</p>
+          <div className="verify__spinner-wrap">
+            <span className="spinner" />
+            <p className="verify__placeholder">Analyzing text…</p>
+          </div>
         )}
         {status === "done" && issues.length === 0 && (
           <p className="verify__ok">✓ No issues found.</p>
@@ -167,7 +170,9 @@ export function VerificationPanel() {
             );
           })}
         {status === "checking" && issues.length > 0 && (
-          <p className="verify__placeholder">Analyzing…</p>
+          <p className="verify__streaming">
+            <span className="spinner spinner--sm" /> Analyzing…
+          </p>
         )}
       </div>
 

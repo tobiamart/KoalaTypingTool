@@ -170,9 +170,18 @@ and the other chapters of the same work as context.
 
 Find concrete problems in the verified text and classify each as exactly one of:
 - "grammar" — grammar, spelling or punctuation errors
-- "consistency" — contradictions within the verified text itself OR with the
-  other chapters (names, facts, timeline, character traits)
-- "logic" — contradictions with facts or rules established in the author's notes
+- "consistency" — a fact in the text contradicts something already established,
+  no matter the source: the verified text itself, another chapter, or the
+  author's notes (names, character traits, appearance, objects, places, dates)
+- "logic" — the text does not add up on its own terms: impossible or reversed
+  sequences of events, an effect preceding its cause, a character acting on
+  knowledge they could not have, or an event that breaks a rule of the world
+  stated in the notes (e.g. casting a spell at night when magic works by day)
+
+Choosing between the two: ask what is wrong. If a stated fact simply does not
+match what was established elsewhere, that is "consistency". If the facts are
+individually fine but the events could not have happened that way, that is
+"logic".
 
 Rules:
 - Report only problems in the verified text — never in the notes or other chapters.
