@@ -1,4 +1,4 @@
-# Buduje aplikacje Koala (wersja release z instalatorami).
+# Buduje aplikacje Narwhal (wersja release z instalatorami).
 # Uruchamia sie w srodowisku Visual Studio Dev Shell, zeby uzyc wlasciwego linkera MSVC.
 
 $ErrorActionPreference = "Stop"
@@ -37,5 +37,5 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host ""
 Write-Host "== Gotowe! Pliki znajdziesz w: ==" -ForegroundColor Green
 Write-Host "  app\src-tauri\target\release\app.exe"
-Write-Host "  app\src-tauri\target\release\bundle\nsis\Koala_0.1.0_x64-setup.exe"
-Write-Host "  app\src-tauri\target\release\bundle\msi\Koala_0.1.0_x64_en-US.msi"
+Write-Host "  app\src-tauri\target\release\bundle\nsis\Narwhal_0.1.0_x64-setup.exe"
+Write-Host "  app\src-tauri\target\release\bundle\msi\Narwhal_0.1.0_x64_en-US.msi"

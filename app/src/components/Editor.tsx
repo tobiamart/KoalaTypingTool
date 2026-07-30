@@ -165,6 +165,17 @@ function FileEditor({ title }: { title: string }) {
     // Wyłączamy natychmiastowy render — w React 19 StrictMode (podwójny montaż)
     // gwarantuje to poprawną rejestrację skrótów klawiszowych (Ctrl+B, Ctrl+I, ...).
     immediatelyRender: false,
+    editorProps: {
+      // Natywny sprawdzacz pisowni webview (WKWebView na macOS, WebView2 na
+      // Windows) korzysta ze słowników systemowych — zero bajtów w instalatorze
+      // i zero zobowiązań licencyjnych. Ani ProseMirror, ani TipTap nie ustawiają
+      // tego atrybutu, więc podajemy go sami.
+      //
+      // Świadomie BEZ atrybutu `lang`: wpisanie tu jednego języka przypięłoby
+      // sprawdzanie do niego na stałe. Bez niego system rozpoznaje język tekstu
+      // sam, więc rozdział po polsku i notatka po angielsku działają obok siebie.
+      attributes: { spellcheck: "true" },
+    },
     extensions: [
       StarterKit,
       BlockquoteExit,

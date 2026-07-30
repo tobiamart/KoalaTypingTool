@@ -1,4 +1,4 @@
-// Typy domenowe aplikacji Koala.
+// Typy domenowe aplikacji Narwhal.
 
 /** Referencja do pojedynczego pliku treści w projekcie (rozdział lub notatka). */
 export interface FileRef {

@@ -9,8 +9,8 @@ import { VerificationPanel } from "./components/VerificationPanel";
 import { Settings } from "./components/Settings";
 import "./styles.css";
 
-const SIDEBAR_KEY = "koala.sidebarWidth";
-const VERIFY_KEY = "koala.verifyWidth";
+const SIDEBAR_KEY = "narwhal.sidebarWidth";
+const VERIFY_KEY = "narwhal.verifyWidth";
 const MIN_SIDEBAR = 180;
 const MAX_SIDEBAR = 460;
 const MIN_VERIFY = 260;
@@ -77,7 +77,7 @@ function App() {
       if (!ok) {
         const closeAnyway = await confirm(
           "Saving your latest changes failed. Close anyway and lose them?",
-          { title: "Koala", kind: "warning" },
+          { title: "Narwhal", kind: "warning" },
         );
         if (!closeAnyway) event.preventDefault();
       }

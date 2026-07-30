@@ -1,5 +1,5 @@
 /* ===================================================================
-   Koala — ciemny, minimalistyczny motyw.
+   Narwhal — ciemny, minimalistyczny motyw.
    Tło: near-black z subtelnym eukaliptusowym odcieniem (nie czysta czerń).
    Akcent: przygaszona szałwiowo-eukaliptusowa zieleń, używana oszczędnie.
    Chrome (panele) w sans; obszar pisania w serif (charakter literacki).
@@ -97,7 +97,7 @@ button { font-family: inherit; cursor: pointer; color: inherit; }
 }
 .start__inner { width: 100%; max-width: 560px; }
 .start__header { text-align: center; margin-bottom: 3rem; }
-.start__logo { font-size: 2.4rem; opacity: 0.9; }
+.start__logo { display: flex; justify-content: center; opacity: 0.95; }
 .start__header h1 {
   margin: 0.5rem 0 0;
   font-size: 2.6rem;

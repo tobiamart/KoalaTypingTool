@@ -1,12 +1,39 @@
-# Konfiguracja Cloudflare Workera (serwer proxy AI dla Koali).
+# Konfiguracja Cloudflare Workera (serwer proxy AI dla Narwhala).
 # Lokalnie: `npm run dev` (wrangler dev, http://localhost:8787) — bez konta Cloudflare.
 # Produkcyjnie: `npm run deploy` + `wrangler secret put ANTHROPIC_API_KEY`.
 
-name = "koala-proxy"
+name = "narwhal-proxy"
 main = "src/index.ts"
 compatibility_date = "2026-07-01"
 compatibility_flags = ["nodejs_compat"]
 
-# Klucz Anthropic NIE jest tu zapisany:
+# Własna domena zamiast adresu *.workers.dev. `custom_domain = true` sprawia, że
+# wrangler sam tworzy rekord DNS i zamawia certyfikat przy `npm run deploy`.
+# Bierzemy tylko subdomenę `api` — korzeń narwhal.ink zostaje wolny pod stronę.
+routes = [{ pattern = "api.narwhal.ink", custom_domain = true }]
+
+# Świadomie bez adresu *.workers.dev: jeden publiczny endpoint zamiast dwóch.
+workers_dev = false
+
+# Limit tempa /verify: 10 żądań na 60 s z jednego adresu IP. Normalne pisanie
+# tego nie dotyka (sprawdzenie trwa dziesiątki sekund), a pętla staje się
+# bezużyteczna. Licznik jest przybliżony — działa na poziomie lokalizacji
+# Cloudflare, nie globalnie — więc to ogranicznik nadużyć, nie precyzyjny licznik.
+[[ratelimits]]
+name = "VERIFY_RATE_LIMIT"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 10
+  period = 60
+
+# Bez tego logi z console.log nie są nigdzie zatrzymywane, a to właśnie w nich
+# siedzi linia `usage: user=… input=…` — jedyne źródło danych o koszcie na
+# użytkownika. Na darmowym planie retencja jest krótsza, ale logi są.
+[observability]
+enabled = true
+
+# Sekrety NIE są tu zapisane:
 #  - lokalnie: plik .dev.vars (gitignorowany), wzór w .dev.vars.example
 #  - produkcyjnie: `wrangler secret put ANTHROPIC_API_KEY`
+#                  `wrangler secret put NARWHAL_AUTH_TOKEN`

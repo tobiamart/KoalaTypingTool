@@ -1,4 +1,4 @@
-# Uruchamia Koala w trybie deweloperskim (hot-reload - zmiany w kodzie widac od razu).
+# Uruchamia Narwhal w trybie deweloperskim (hot-reload - zmiany w kodzie widac od razu).
 # Okno aplikacji otworzy sie automatycznie. Zamkniecie okna lub Ctrl+C konczy tryb dev.
 
 $ErrorActionPreference = "Stop"

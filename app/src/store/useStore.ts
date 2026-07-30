@@ -13,8 +13,8 @@ import type {
 import type { Issue } from "../lib/ai";
 import * as storage from "../lib/storage";
 
-const RECENT_KEY = "koala.recentProjects";
-const FONT_KEY = "koala.editorFont";
+const RECENT_KEY = "narwhal.recentProjects";
+const FONT_KEY = "narwhal.editorFont";
 const MAX_RECENT = 10;
 
 function loadFont(): FontChoice {

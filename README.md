@@ -1,4 +1,6 @@
-# Koala 🐨
+# Narwhal 🐋
+
+**[narwhal.ink](https://narwhal.ink)**
 
 Fact-checking writing tool — a desktop app for writing long-form, chaptered text
 (books, papers) with AI-assisted verification of grammar, consistency, and logic.
@@ -34,6 +36,36 @@ npm run tauri dev     # development
 npm run tauri build   # release installers
 npm test              # unit tests (vitest)
 ```
+
+## Branding
+
+One graphic is the single source of truth: **`app/src/assets/narwhal.svg`**. It is
+used both on the start screen and as the input for the app icon set:
+
+```
+cd app && npx tauri icon src/assets/narwhal.svg --ios-color "#0f1211"
+```
+
+That regenerates everything under `app/src-tauri/icons/` (all PNG sizes, `.icns`,
+`.ico`, plus Android and iOS sets). Icon changes are build inputs, so the next
+`npm run tauri dev` recompiles the Rust shell.
+
+The current mark is a **placeholder** drawn from scratch (no third-party licence
+attached). What to request from a designer replacing it:
+
+| Item | Spec |
+| --- | --- |
+| Master source | **SVG** (or Figma/AI), shapes as paths, no external fonts, no embedded raster |
+| Main export | **1024×1024 PNG**, transparent, sRGB, 32-bit with alpha (2048 also fine) |
+| Framing | Artwork fills the square with ~8% padding — a mark floating in empty space renders tiny as an icon |
+| Background | Transparent is fine and is what we ship — macOS composites the system theme (light/dark) behind the mark. An opaque rounded-square (squircle) is the alternative if a fixed look across every backdrop is wanted |
+| Small-size variant | Simplified silhouette legible at 16×16 (drop hairline detail such as tusk stripes) |
+| iOS | Opaque 1024×1024, no alpha, square corners (Apple applies the mask) |
+| Android | Adaptive icon: separate foreground and background layers, safe zone respected |
+| Rights | **Written transfer of copyright**, not just a usage licence — required to use the mark as a trademark |
+
+`npx tauri icon` accepts a squared PNG **or** SVG, but its SVG parser rejects XML
+comments before the root `<svg>` element — keep the file comment-free.
 
 ## Status
 

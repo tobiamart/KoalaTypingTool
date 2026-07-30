@@ -4,6 +4,10 @@
 // serwer. Lokalnie serwer działa na http://localhost:8787 (uruchamiany przez
 // server-dev.bat albo `npm run dev` w server/). Bez klucza po stronie serwera
 // odpowiedzi są przykładowe (pole `mock: true`).
+//
+// Do serwera wysyłamy token dostępu (`Authorization: Bearer`), jeśli jest —
+// patrz getAuthToken(). To szew pod przyszłe konta użytkowników; token
+// deweloperski nie jest sekretem chroniącym cokolwiek poza kosztem API.
 
 /** Kategoria wykrytego problemu. */
 export type IssueType = "grammar" | "consistency" | "logic";
@@ -48,8 +52,28 @@ export interface VerifyParams {
   chapters: { title: string; content: string }[];
 }
 
-// TODO: po wdrożeniu Workera do Cloudflare podmienić na adres produkcyjny.
-const PROXY_URL = "http://localhost:8787";
+/**
+ * Adres serwera proxy. W trybie deweloperskim celujemy w lokalnego wranglera,
+ * w zbudowanej aplikacji w produkcyjnego Workera — inaczej każdy test podczas
+ * pisania kodu paliłby prawdziwy limit API. `VITE_NARWHAL_PROXY_URL` pozwala
+ * nadpisać jedno i drugie (np. testowanie produkcyjnego Workera z trybu dev).
+ */
+const PROXY_URL =
+  import.meta.env.VITE_NARWHAL_PROXY_URL ??
+  (import.meta.env.DEV ? "http://localhost:8787" : "https://api.narwhal.ink");
+
+/**
+ * Szew tożsamości. Dziś zwraca token deweloperski z `VITE_NARWHAL_TOKEN`
+ * (plik `app/.env.local`, wzór w `app/.env.example`); docelowo zwróci token
+ * zalogowanego użytkownika z keychaina — patrz Blok 3 w TODO.md.
+ *
+ * Brak tokenu nie jest błędem: serwer bez ustawionego NARWHAL_AUTH_TOKEN ma
+ * bramkę wyłączoną, więc praca lokalna nie wymaga żadnej konfiguracji.
+ */
+function getAuthToken(): string | undefined {
+  const token = import.meta.env.VITE_NARWHAL_TOKEN;
+  return token ? token : undefined;
+}
 
 // Długi rozdział + myślenie modelu potrafią trwać dziesiątki sekund.
 const TIMEOUT_MS = 180_000;
@@ -74,13 +98,32 @@ export async function verifyText(
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
+    const token = getAuthToken();
     const res = await fetch(`${PROXY_URL}/verify`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify(params),
       signal: controller.signal,
     });
 
+    // 401 to inna sytuacja niż padnięty serwer — komunikat musi kierować
+    // użytkownika do tokenu, a nie do restartu serwera.
+    if (res.status === 401) {
+      throw new Error(
+        "Not authorized to use AI verification. Check your access token and try again.",
+      );
+    }
+    if (res.status === 429) {
+      throw new Error("Too many checks in a short time. Wait a minute and try again.");
+    }
+    if (res.status === 413) {
+      throw new Error(
+        "This text is too long to verify in one request. Split it into shorter chapters.",
+      );
+    }
     if (!res.ok) {
       throw new Error(`Verification server error (HTTP ${res.status}).`);
     }
@@ -127,7 +170,8 @@ export async function verifyText(
     }
     if (e instanceof TypeError) {
       throw new Error(
-        "Cannot reach the verification server. Start it with server-dev.bat and try again.",
+        "Cannot reach the verification server. Start it (server-dev.bat on Windows," +
+          " or `npm run dev` in server/) and try again.",
       );
     }
     throw e;

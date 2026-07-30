@@ -1,10 +1,10 @@
-# Koala — kontekst projektu dla Claude
+# Narwhal — kontekst projektu dla Claude
 
 > Ten plik jest wczytywany automatycznie przez Claude Code po otwarciu repo.
 > Służy do kontynuowania pracy nad projektem na dowolnym urządzeniu.
 > Konwencje językowe TEGO pliku i rozmów: patrz sekcja „Język".
 
-## Czym jest Koala
+## Czym jest Narwhal
 
 Aplikacja **desktopowa** (Tauri) do pisania długich tekstów podzielonych na
 **rozdziały**, z funkcją **weryfikacji AI** (fact-checking).
@@ -72,8 +72,16 @@ okna dopycha zapis (`onCloseRequested` w `App.tsx` + `core:window:allow-destroy`
 w capabilities); `saveActive` zwraca boolean i błędy zapisu lądują w `error`
 (pływający baner w workspace).
 
-Rust (`app/src-tauri/`): tylko init pluginów (opener, dialog, fs) — brak własnych komend.
+Rust (`app/src-tauri/`): init pluginów (opener, dialog, fs) + `register_spellcheck_defaults()`
+dla macOS — **brak własnych komend** (`invoke`) i tak ma zostać.
 Uprawnienia w `capabilities/default.json` (scope `$HOME/**`).
+
+**Sprawdzanie pisowni** korzysta z natywnego mechanizmu webview (słowniki systemowe,
+zero bajtów w instalatorze). Wymaga *dwóch* rzeczy naraz: atrybutu `spellcheck`
+w `editorProps` (`Editor.tsx`, świadomie bez `lang` — system sam rozpoznaje język)
+**i** klucza `WebContinuousSpellCheckingEnabled` w NSUserDefaults, bo w osadzonym
+WKWebView ciągłe sprawdzanie jest domyślnie wyłączone (`lib.rs`). Sam atrybut HTML
+nie wystarczy.
 
 ## Ważne pułapki (TipTap 3)
 
@@ -104,9 +112,41 @@ ten proxy (`app/src/lib/ai.ts`, `PROXY_URL`).
   rozdziały są kontekstem spójności.
 - **Lokalnie:** `server-dev.bat` w root albo `npm run dev` w `server/` →
   `http://localhost:8787` (wrangler dev, bez konta Cloudflare).
-- **CORS** wpuszcza tylko originy okna Koali (`localhost:1420`, `tauri.localhost`).
-- **Deploy (TODO):** `npm run deploy` + `wrangler secret put ANTHROPIC_API_KEY`,
-  potem podmienić `PROXY_URL` w `app/src/lib/ai.ts`.
+- **Język odpowiedzi** ustala `detectLanguage()` w `server/src/index.ts`: osobne
+  mikro-zapytanie do `claude-haiku-4-5` (próbka 1500 znaków, `max_tokens: 16`)
+  zwraca **nazwę** języka rozdziału, a ta nazwa idzie do promptu głównego obok
+  tekstu. Dowolny język, nie tylko polski i angielski. Błąd wykrywania nie psuje
+  weryfikacji — wtedy angielski.
+  **Nie zastępować tego instrukcją w prompcie.** Sprawdzone i nieskuteczne były
+  cztery warianty: reguła w prompcie systemowym, opisy pól w schemacie JSON,
+  przypomnienie tuż przy tekście oraz pole `language` jako pierwsze w structured
+  outputs. Za każdym razem model kopiował język **notatek**, więc rozdział po
+  angielsku dostawał opisy po polsku. Działa wyłącznie nazwa podana z góry.
+- **Bramka dostępu:** gdy ustawiony jest `NARWHAL_AUTH_TOKEN`, `/verify` wymaga
+  `Authorization: Bearer <token>` — inaczej 401. Bez tokenu bramka jest wyłączona
+  (praca lokalna bez konfiguracji); health-check raportuje `auth: "on" | "off"`.
+  Po stronie aplikacji token daje szew `getAuthToken()` w `app/src/lib/ai.ts`
+  (dziś `VITE_NARWHAL_TOKEN` z `app/.env.local`, wzór w `app/.env.example`;
+  docelowo token zalogowanego użytkownika). `authenticate()` zwraca też `userId`,
+  który trafia do logu `usage` — jedyne miejsce do podmiany, gdy dojdą konta.
+- **Ograniczniki nadużyć** (bo token siedzi w bundlu aplikacji i trzeba zakładać,
+  że wycieknie): limit tempa 10 żądań/60 s na adres IP (binding `[[ratelimits]]`,
+  odpowiedź 429) oraz limity rozmiaru — 8 MB ciała, 200 tys. znaków rozdziału,
+  1,8 mln znaków łącznie (odpowiedź 413). Bez nich jedno żądanie albo jedna
+  pętla mogą kosztować dowolnie dużo. Aplikacja tłumaczy 429 i 413 na komunikaty.
+  Limity rozmiaru są celowo tak wysokie, **żeby zmieściła się cała spora
+  książka**: Sonnet 5 ma okno 1 mln tokenów, a 1,8 mln znaków to ~700 tys.
+  tokenów dla polskiego. Konsekwencja: sprawdzenie pełnej książki kosztuje
+  rzędy wielkości więcej niż rozdziału — to argument za limitami per użytkownik,
+  nie przeciw nim. Parsowanie takiego żądania przekracza też 10 ms CPU
+  darmowego planu Cloudflare (wymaga Workers Paid).
+- **CORS** wpuszcza tylko originy okna Narwhala: `localhost:1420` (dev),
+  `tauri.localhost` (webview Windows), `tauri://localhost` (webview macOS/Linux).
+  `allowHeaders` musi jawnie zawierać `Authorization`, inaczej preflight odrzuci
+  żądanie z tokenem.
+- **Deploy (TODO):** `npm run deploy` + `wrangler secret put ANTHROPIC_API_KEY`
+  + `wrangler secret put NARWHAL_AUTH_TOKEN`, potem podmienić `PROXY_URL`
+  w `app/src/lib/ai.ts`.
 
 ## Język
 

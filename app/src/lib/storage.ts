@@ -69,7 +69,7 @@ export async function saveManifest(project: OpenProject): Promise<void> {
 export async function loadProject(folderPath: string): Promise<OpenProject> {
   const manifestPath = await join(folderPath, MANIFEST_NAME);
   if (!(await exists(manifestPath))) {
-    throw new Error("This is not a Koala project folder (missing project.json).");
+    throw new Error("This is not a Narwhal project folder (missing project.json).");
   }
   const raw = await readTextFile(manifestPath);
   const manifest = JSON.parse(raw) as ProjectManifest;

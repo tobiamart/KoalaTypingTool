@@ -87,7 +87,7 @@ describe("createProject / loadProject", () => {
 
   it("loadProject odrzuca folder bez manifestu", async () => {
     await expect(storage.loadProject("C:/random")).rejects.toThrow(
-      /not a Koala project/,
+      /not a Narwhal project/,
     );
   });
 });

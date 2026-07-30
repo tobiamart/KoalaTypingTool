@@ -1,4 +1,4 @@
-// Serwer proxy AI dla Koali — Cloudflare Worker + Hono.
+// Serwer proxy AI dla Narwhala — Cloudflare Worker + Hono.
 //
 // Jedyny endpoint: POST /verify — przyjmuje tekst rozdziału i notatki autora,
 // zwraca listę problemów (gramatyka / spójność / logika).
@@ -9,9 +9,14 @@
 //  - klucz obecny (.dev.vars lokalnie / wrangler secret produkcyjnie) →
 //    prawdziwa weryfikacja przez API Anthropic
 //
+// Dostęp: gdy ustawiony jest NARWHAL_AUTH_TOKEN, /verify wymaga nagłówka
+// `Authorization: Bearer <token>` (inaczej 401). Bez tokenu bramka jest wyłączona,
+// żeby praca lokalna nie wymagała konfiguracji.
+//
 // TWARDA ZASADA: klucz API żyje wyłącznie tutaj, nigdy w aplikacji desktopowej.
 
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { cors } from "hono/cors";
 import { stream } from "hono/streaming";
 import Anthropic from "@anthropic-ai/sdk";
@@ -19,7 +24,38 @@ import Anthropic from "@anthropic-ai/sdk";
 /** Zmienne środowiskowe Workera (lokalnie: .dev.vars, produkcyjnie: secret). */
 interface Env {
   ANTHROPIC_API_KEY?: string;
+  /**
+   * Token wymagany w nagłówku `Authorization: Bearer`. Nieustawiony = bramka
+   * wyłączona, żeby lokalny `wrangler dev` działał bez żadnej konfiguracji.
+   * Na produkcji ustawiany przez `wrangler secret put NARWHAL_AUTH_TOKEN`.
+   */
+  NARWHAL_AUTH_TOKEN?: string;
+  /** Licznik tempa żądań (binding `[[ratelimits]]` w wrangler.toml). */
+  VERIFY_RATE_LIMIT?: RateLimiter;
 }
+
+/**
+ * Binding limitera Cloudflare. Własny interfejs zamiast typu z SDK, żeby kod
+ * kompilował się niezależnie od wersji `@cloudflare/workers-types`.
+ */
+interface RateLimiter {
+  limit(options: { key: string }): Promise<{ success: boolean }>;
+}
+
+/* Górne ograniczenia żądania. Bez nich pojedyncze żądanie może kosztować
+ * dowolnie dużo: koszt API rośnie liniowo z rozmiarem wejścia.
+ *
+ * Wartości dobrane tak, by ZMIEŚCIŁA SIĘ CAŁA SPORA KSIĄŻKA. Sonnet 5 ma okno
+ * kontekstu 1 mln tokenów; polski tokenizuje się mniej więcej po 2,5 znaku na
+ * token, więc 1,8 mln znaków to ok. 700 tys. tokenów — grubo ponad 250 tys.
+ * słów, z zapasem na prompt systemowy i odpowiedź. Odcinamy dopiero to, czego
+ * model i tak by nie przyjął. */
+/** Twardy limit ciała żądania; sprawdzany przed parsowaniem JSON-a. */
+const MAX_BODY_BYTES = 8_000_000;
+/** Łącznie tekst + notatki + rozdziały (~700 tys. tokenów dla polskiego). */
+const MAX_TOTAL_CHARS = 1_800_000;
+/** Sam weryfikowany rozdział — pojedynczy rozdział nigdy nie jest tak długi. */
+const MAX_TEXT_CHARS = 200_000;
 
 /** Kategorie problemów — muszą odpowiadać IssueType w app/src/lib/ai.ts. */
 type IssueType = "grammar" | "consistency" | "logic";
@@ -60,8 +96,13 @@ type StreamMsg =
 
 const app = new Hono<{ Bindings: Env }>();
 
-// CORS: wpuszczamy wyłącznie okno aplikacji Koala — dev (vite) i wersję
-// spakowaną (origin webview Tauri na Windows to http(s)://tauri.localhost).
+// CORS: wpuszczamy wyłącznie okno aplikacji Narwhal.
+//  - http://localhost:1420 — tryb deweloperski (vite)
+//  - http(s)://tauri.localhost — webview spakowanej aplikacji na Windows
+//  - tauri://localhost — webview spakowanej aplikacji na macOS i Linuksie
+//    (inny schemat protokołu niż na Windows, dlatego osobny wpis)
+// allowHeaders trzeba podać jawnie: bez „Authorization" preflight odrzuciłby
+// żądanie z tokenem, a Hono domyślnie nie wpuszcza żadnych własnych nagłówków.
 app.use(
   "*",
   cors({
@@ -69,16 +110,135 @@ app.use(
       "http://localhost:1420",
       "http://tauri.localhost",
       "https://tauri.localhost",
+      "tauri://localhost",
     ],
+    allowHeaders: ["Content-Type", "Authorization"],
   }),
 );
 
-// Prosty health-check — pozwala sprawdzić, w którym trybie działa serwer.
+// Prosty health-check — pozwala sprawdzić, w którym trybie działa serwer
+// i czy bramka dostępu jest aktywna (`auth: "off"` = token nieustawiony).
 app.get("/", (c) =>
-  c.json({ ok: true, mode: c.env.ANTHROPIC_API_KEY ? "live" : "mock" }),
+  c.json({
+    ok: true,
+    mode: c.env.ANTHROPIC_API_KEY ? "live" : "mock",
+    auth: c.env.NARWHAL_AUTH_TOKEN ? "on" : "off",
+  }),
 );
 
+/* ------------------------------------------------------------------ */
+/* Bramka dostępu                                                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Wynik bramki. `userId` trafia do logu zużycia — dziś jest jeden token
+ * deweloperski i stałe „dev", docelowo token zalogowanego użytkownika i jego
+ * identyfikator (Blok 3 w TODO.md). Trzymanie tego już teraz w jednym miejscu
+ * oznacza, że dodanie prawdziwej tożsamości to zmiana tylko w authenticate().
+ */
+type Auth = { ok: true; userId: string } | { ok: false };
+
+/**
+ * Porównanie tokenów w czasie niezależnym od tego, ile znaków się zgadza.
+ * Zwykłe `===` przerywa na pierwszej różnicy, co teoretycznie pozwala zgadywać
+ * token bajt po bajcie. Własna implementacja, bo nie chcemy zależeć od tego,
+ * czy dany runtime ma `crypto.subtle.timingSafeEqual`. Długość i tak wycieka —
+ * to standardowy i akceptowany kompromis.
+ */
+function tokensEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+/**
+ * Pyta Claude'a, w jakim języku napisany jest rozdział. Osobne mikro-zapytanie
+ * do Haiku (kilkadziesiąt tokenów), bo tylko **nazwa** języka podana z góry
+ * skutecznie steruje głównym wywołaniem.
+ *
+ * Cztery podejścia bez osobnego zapytania zawiodły — instrukcja w prompcie
+ * systemowym, opisy pól w schemacie, przypomnienie tuż przy tekście i pole
+ * `language` jako pierwsze w structured outputs. Za każdym razem model kopiował
+ * język notatek, więc rozdział po angielsku dostawał opisy po polsku.
+ * Nie wracać do tych wariantów bez dowodu, że coś się zmieniło.
+ *
+ * Wykrywanie robi model, nie regexp — zgodnie z wymaganiem, że ma to działać
+ * dla dowolnego języka, nie tylko polskiego i angielskiego.
+ */
+async function detectLanguage(client: Anthropic, text: string): Promise<string> {
+  // Próbka wystarczy — język widać po pierwszym akapicie, a krótkie wejście
+  // trzyma koszt i opóźnienie tego kroku na poziomie szumu.
+  const sample = text.slice(0, 1500);
+  try {
+    const res = await client.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 16,
+      system:
+        "Reply with the English name of the language the text is written in, and nothing else. Examples: English, Polish, Spanish, German.",
+      messages: [{ role: "user", content: sample }],
+    });
+    const block = res.content.find((b) => b.type === "text");
+    const name = block?.type === "text" ? block.text.trim() : "";
+    // Sanity check: nazwa języka to jedno–dwa słowa liter. Cokolwiek innego
+    // znaczy, że model odpowiedział nie tak — wtedy angielski, zgodnie z regułą.
+    return /^[A-Za-z][A-Za-z ]{1,24}$/.test(name) ? name : "English";
+  } catch {
+    // Wykrywanie języka nie może wywalić całej weryfikacji.
+    return "English";
+  }
+}
+
+/** Sumaryczna długość tytułów i treści bloku kontekstu (odporna na złe wpisy). */
+function blockLength(items: { title: string; content: string }[] | undefined): number {
+  if (!Array.isArray(items)) return 0;
+  let total = 0;
+  for (const item of items) {
+    total += String(item?.title ?? "").length + String(item?.content ?? "").length;
+  }
+  return total;
+}
+
+function authenticate(c: Context<{ Bindings: Env }>): Auth {
+  const expected = c.env.NARWHAL_AUTH_TOKEN;
+  // Bramka wyłączona — lokalny wrangler dev ma działać bez konfiguracji.
+  if (!expected) return { ok: true, userId: "anonymous" };
+
+  const prefix = "Bearer ";
+  const header = c.req.header("Authorization") ?? "";
+  if (!header.startsWith(prefix)) return { ok: false };
+  if (!tokensEqual(header.slice(prefix.length), expected)) return { ok: false };
+  return { ok: true, userId: "dev" };
+}
+
 app.post("/verify", async (c) => {
+  // Sprawdzamy uprawnienia PRZED czytaniem ciała żądania — nieuprawniony
+  // klient nie powinien być w stanie zmusić Workera do żadnej pracy.
+  const auth = authenticate(c);
+  if (!auth.ok) {
+    return c.json({ error: "Unauthorized." }, 401);
+  }
+
+  // Limit tempa. Token dostępu leży w bundlu aplikacji, więc trzeba założyć,
+  // że kiedyś wycieknie — wtedy to jest jedyna rzecz, która stoi między
+  // wyciekiem a pętlą generującą rachunek. Kluczem jest adres IP; gdy dojdą
+  // konta, powinien nim być identyfikator użytkownika.
+  const limiter = c.env.VERIFY_RATE_LIMIT;
+  if (limiter) {
+    const key = c.req.header("CF-Connecting-IP") ?? auth.userId;
+    const { success } = await limiter.limit({ key });
+    if (!success) {
+      return c.json({ error: "Too many requests. Try again in a minute." }, 429);
+    }
+  }
+
+  // Odrzuć zbyt duże ciało przed parsowaniem — parsowanie kilkumegabajtowego
+  // JSON-a samo w sobie kosztuje czas CPU, którego na darmowym planie jest 10 ms.
+  const declaredBytes = Number(c.req.header("Content-Length") ?? 0);
+  if (declaredBytes > MAX_BODY_BYTES) {
+    return c.json({ error: "Request too large." }, 413);
+  }
+
   let body: VerifyRequest;
   try {
     body = await c.req.json<VerifyRequest>();
@@ -90,6 +250,18 @@ app.post("/verify", async (c) => {
   }
   if (body.chapters !== undefined && !Array.isArray(body.chapters)) {
     return c.json({ error: "Expected chapters to be an array." }, 400);
+  }
+
+  // Content-Length bywa nieobecny albo skłamany, więc mierzymy też to, co
+  // faktycznie poszłoby do modelu. `blockLength` jest odporny na wpisy o złym
+  // kształcie — pola bez treści liczą się jako puste, zamiast wywalać żądanie.
+  if (body.text.length > MAX_TEXT_CHARS) {
+    return c.json({ error: "Chapter too long to verify." }, 413);
+  }
+  const totalChars =
+    body.text.length + blockLength(body.notes) + blockLength(body.chapters);
+  if (totalChars > MAX_TOTAL_CHARS) {
+    return c.json({ error: "Project too large to verify in one request." }, 413);
   }
 
   const hasKey = Boolean(c.env.ANTHROPIC_API_KEY);
@@ -119,8 +291,11 @@ app.post("/verify", async (c) => {
     }
 
     try {
-      const usage = await verifyWithClaude(c.env.ANTHROPIC_API_KEY!, body, (issue) =>
-        send({ type: "issue", issue }),
+      const usage = await verifyWithClaude(
+        c.env.ANTHROPIC_API_KEY!,
+        body,
+        auth.userId,
+        (issue) => send({ type: "issue", issue }),
       );
       await send({ type: "done", usage });
     } catch (e) {
@@ -187,8 +362,10 @@ Rules:
 - Report only problems in the verified text — never in the notes or other chapters.
 - Report only genuine, specific problems. No stylistic preferences, no praise.
 - "fragment" must be an exact quote from the verified text (max ~15 words).
-- Write "description" and "suggestion" in the same language as the analyzed text.
-- If there are no problems, return an empty issues list.`;
+- If there are no problems, return an empty issues list.
+
+- Write every "description" and "suggestion" in the language named in the
+  "## Text to verify" section below.`;
 
 /**
  * Przyrostowy ekstraktor obiektów `issue` z częściowego JSON-a.
@@ -240,9 +417,13 @@ function makeIssueExtractor(): { push: (chunk: string) => Issue[] } {
 async function verifyWithClaude(
   apiKey: string,
   { text, notes, chapters }: VerifyRequest,
+  userId: string,
   onIssue: (issue: Issue) => Promise<void>,
 ): Promise<VerifyUsage> {
   const client = new Anthropic({ apiKey });
+
+  // Najpierw pytamy o język — wynik trafia do promptu głównego jako nazwa.
+  const language = await detectLanguage(client, text);
 
   const notesBlock =
     notes.length > 0
@@ -294,8 +475,10 @@ async function verifyWithClaude(
             cache_control: { type: "ephemeral", ttl: "1h" },
           },
           {
+            // Nazwa języka stoi tuż przy tekście i jest tym, co realnie steruje
+            // odpowiedzią. Blok jest poza cache (zmienia się co żądanie).
             type: "text",
-            text: `## Text to verify\n\n${text}`,
+            text: `## Text to verify\n\n(This text is written in ${language}. Write every description and suggestion in ${language}.)\n\n${text}`,
           },
         ],
       },
@@ -327,8 +510,10 @@ async function verifyWithClaude(
     cacheRead: message.usage.cache_read_input_tokens ?? 0,
     output: message.usage.output_tokens,
   };
+  // `user` w logu jest po to, by dało się policzyć koszt na użytkownika —
+  // bez tego nie ma danych do wyceny planów ani do ustawienia limitów.
   console.log(
-    `usage: input=${usage.input} cache_write=${usage.cacheWrite}` +
+    `usage: user=${userId} input=${usage.input} cache_write=${usage.cacheWrite}` +
       ` cache_read=${usage.cacheRead} output=${usage.output}`,
   );
   return usage;

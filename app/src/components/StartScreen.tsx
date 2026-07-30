@@ -4,6 +4,9 @@
 import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useStore } from "../store/useStore";
+// Jedna grafika marki dla całego projektu: ten sam plik zasila ekran startowy
+// i generator ikon aplikacji (`npx tauri icon src/assets/narwhal.svg`).
+import narwhalMark from "../assets/narwhal.svg";
 
 export function StartScreen() {
   const { recent, newProject, openFolder, error, clearError } = useStore();
@@ -28,8 +31,12 @@ export function StartScreen() {
     <div className="start">
       <div className="start__inner">
         <header className="start__header">
-          <div className="start__logo">🐨</div>
-          <h1>Koala</h1>
+          <div className="start__logo">
+            {/* Grafika bez własnego tła — jako ikona macOS podkłada pod nią
+                tło zgodne z motywem systemu (jasny/ciemny). */}
+            <img src={narwhalMark} alt="" width="76" height="76" />
+          </div>
+          <h1>Narwhal</h1>
           <p className="start__tagline">Fact-checking writing tool</p>
         </header>
 

@@ -1,0 +1,19 @@
+# Wzór lokalnej konfiguracji sekretów (wrangler dev czyta plik .dev.vars).
+# 1. Skopiuj ten plik jako .dev.vars (bez .example)
+# 2. Wklej swój klucz z https://console.anthropic.com
+# Plik .dev.vars jest gitignorowany — klucz NIGDY nie trafia do repo.
+#
+# Bez tego pliku serwer działa w trybie atrapy (przykładowe wyniki).
+#
+# UWAGA: nie zostawiaj poniższej atrapy klucza w .dev.vars. Serwer uzna, że klucz
+# jest, wejdzie w tryb live i zwróci błąd z API. Albo wklej prawdziwy klucz,
+# albo usuń tę linię — wtedy dostaniesz uczciwy tryb atrapy.
+
+ANTHROPIC_API_KEY=sk-ant-...
+
+# Token dostępu do /verify. Pozostaw zakomentowany, żeby pracować lokalnie
+# bez bramki. Gdy jest ustawiony, aplikacja musi wysyłać ten sam token
+# w VITE_NARWHAL_TOKEN (patrz app/.env.example), inaczej dostanie 401.
+# Na produkcji: `wrangler secret put NARWHAL_AUTH_TOKEN`.
+#
+# NARWHAL_AUTH_TOKEN=dowolny-dlugi-losowy-ciag
