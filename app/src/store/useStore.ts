@@ -78,7 +78,6 @@ interface AppState {
   createNote: (title: string) => Promise<string | null>;
   removeRef: (kind: ActiveKind, id: string) => Promise<void>;
   renameFile: (kind: ActiveKind, id: string, title: string) => Promise<void>;
-  reorderRef: (kind: ActiveKind, id: string, delta: -1 | 1) => Promise<void>;
   clearError: () => void;
   toggleVerify: () => void;
   setIssues: (issues: Issue[]) => void;
@@ -133,6 +132,19 @@ export const useStore = create<AppState>((set, get) => ({
   openFolder: async (path) => {
     set({ loading: true, error: null });
     try {
+      // Wpis mógł zostać na liście po przeniesieniu albo usunięciu folderu.
+      // Wtedy sprzątamy go od razu — inaczej wisiałby tam na zawsze, wyrzucając
+      // ten sam błąd przy każdym kliknięciu.
+      if (!(await storage.isProjectFolder(path))) {
+        const recent = get().recent.filter((r) => r.path !== path);
+        saveRecent(recent);
+        set({
+          recent,
+          loading: false,
+          error: "Project not found — the folder was moved or deleted. Removed from recent projects.",
+        });
+        return;
+      }
       const project = await storage.loadProject(path);
       const recent = rememberProject(project, get().recent);
       const firstRef = project.chapters[0] ?? null;
@@ -163,8 +175,11 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   selectFile: async (kind, id) => {
-    const { project, dirty } = get();
+    const { project, active, dirty } = get();
     if (!project) return;
+    // Kliknięcie w już otwarty plik nie ma nic do zrobienia — bez tego dwuklik
+    // (zmiana nazwy) niepotrzebnie zapisywał i wczytywał ten sam plik z dysku.
+    if (active?.kind === kind && active.id === id) return;
     // Zapisz bieżący plik zanim przełączysz; przy nieudanym zapisie zostań na nim.
     if (dirty) {
       const ok = await get().saveActive();
@@ -257,17 +272,6 @@ export const useStore = create<AppState>((set, get) => ({
     if (!project) return;
     try {
       const updated = await storage.renameRef(project, kind, id, title);
-      set({ project: updated });
-    } catch (e) {
-      set({ error: String(e) });
-    }
-  },
-
-  reorderRef: async (kind, id, delta) => {
-    const { project } = get();
-    if (!project) return;
-    try {
-      const updated = await storage.moveRef(project, kind, id, delta);
       set({ project: updated });
     } catch (e) {
       set({ error: String(e) });

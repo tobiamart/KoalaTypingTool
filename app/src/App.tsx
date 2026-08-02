@@ -16,10 +16,13 @@ const MAX_SIDEBAR = 460;
 const MIN_VERIFY = 260;
 const MAX_VERIFY = 560;
 
-/** Wczytuje zapamiętaną szerokość panelu z localStorage (z wartością domyślną). */
-function loadWidth(key: string, fallback: number): number {
+/** Wczytuje zapamiętaną szerokość panelu z localStorage (z wartością domyślną).
+ *  Wynik jest przycinany do tych samych granic co przeciąganie — bez tego
+ *  wartość zapisana przy innej rozdzielczości (albo ręcznie zepsuta) potrafiła
+ *  zabrać pół okna i nie dało się tego cofnąć inaczej niż myszą. */
+function loadWidth(key: string, fallback: number, min: number, max: number): number {
   const saved = parseInt(localStorage.getItem(key) ?? "", 10);
-  return Number.isFinite(saved) ? saved : fallback;
+  return Number.isFinite(saved) ? Math.min(max, Math.max(min, saved)) : fallback;
 }
 
 function App() {
@@ -29,8 +32,12 @@ function App() {
   const clearError = useStore((s) => s.clearError);
 
   // Szerokości bocznych paneli — zmienialne przeciąganiem, zapamiętywane w localStorage.
-  const [sidebarWidth, setSidebarWidth] = useState(() => loadWidth(SIDEBAR_KEY, 236));
-  const [verifyWidth, setVerifyWidth] = useState(() => loadWidth(VERIFY_KEY, 320));
+  const [sidebarWidth, setSidebarWidth] = useState(() =>
+    loadWidth(SIDEBAR_KEY, 236, MIN_SIDEBAR, MAX_SIDEBAR),
+  );
+  const [verifyWidth, setVerifyWidth] = useState(() =>
+    loadWidth(VERIFY_KEY, 320, MIN_VERIFY, MAX_VERIFY),
+  );
   const dragging = useRef<"sidebar" | "verify" | null>(null);
 
   useEffect(() => {
@@ -125,9 +132,14 @@ function App() {
         </>
       )}
       <Settings />
+      {/* role="alert" sprawia, że czytnik ekranu ogłosi błąd sam; zamknięcie
+          jest przyciskiem, więc działa też z klawiatury. */}
       {error && (
-        <div className="banner banner--error banner--float" onClick={clearError}>
-          {error} <span className="banner__dismiss">✕</span>
+        <div className="banner banner--error banner--float" role="alert">
+          {error}
+          <button className="banner__dismiss" onClick={clearError} aria-label="Dismiss error">
+            ✕
+          </button>
         </div>
       )}
     </div>

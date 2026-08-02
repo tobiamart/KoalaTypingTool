@@ -112,6 +112,7 @@ export function EditorToolbar({ editor }: Props) {
         onClick={() => editor.chain().focus().undo().run()}
         disabled={!state.canUndo}
         title="Undo (Ctrl+Z)"
+        aria-label="Undo"
       >
         ↶
       </button>
@@ -120,6 +121,7 @@ export function EditorToolbar({ editor }: Props) {
         onClick={() => editor.chain().focus().redo().run()}
         disabled={!state.canRedo}
         title="Redo (Ctrl+Y)"
+        aria-label="Redo"
       >
         ↷
       </button>

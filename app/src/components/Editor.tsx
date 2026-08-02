@@ -218,14 +218,24 @@ function FileEditor({ title }: { title: string }) {
   const words = counts?.words ?? 0;
   const chars = counts?.chars ?? 0;
 
+  // Szerokość dymka z CSS (.issue-tip max-width) — potrzebna, by nie wyszedł
+  // poza prawą krawędź okna.
+  const TIP_WIDTH = 340;
+  const TIP_MARGIN = 12;
+
   // Tooltip przez delegację zdarzeń — dekoracje to zwykłe spany w DOM.
   function onMouseOver(e: React.MouseEvent) {
     const el = (e.target as HTMLElement).closest(".issue-hl");
     if (!(el instanceof HTMLElement)) return;
     const rect = el.getBoundingClientRect();
+    // Przy prawej krawędzi dosuwamy dymek do środka okna zamiast go uciąć,
+    // a gdy brakuje miejsca pod fragmentem — pokazujemy go nad nim.
+    const x = Math.min(rect.left, window.innerWidth - TIP_WIDTH - TIP_MARGIN);
+    const below = rect.bottom + 6;
+    const fitsBelow = below + 120 < window.innerHeight;
     setTip({
-      x: rect.left,
-      y: rect.bottom + 6,
+      x: Math.max(TIP_MARGIN, x),
+      y: fitsBelow ? below : Math.max(TIP_MARGIN, rect.top - 6 - 120),
       type: el.dataset.issueType ?? "",
       desc: el.dataset.issueDesc ?? "",
       sugg: el.dataset.issueSugg ?? "",
@@ -238,7 +248,15 @@ function FileEditor({ title }: { title: string }) {
   return (
     <div className={"editor editor--font-" + editorFont}>
       <EditorToolbar editor={editor} />
-      <div className="editor__scroll" onMouseOver={onMouseOver} onMouseOut={onMouseOut}>
+      {/* Pozycja dymka jest liczona raz, względem okna. Przewijanie kółkiem nie
+          odpala mouseout (kursor zostaje nad tekstem), więc dymek zawisłby
+          w oderwaniu od fragmentu — dlatego chowamy go przy każdym scrollu. */}
+      <div
+        className="editor__scroll"
+        onMouseOver={onMouseOver}
+        onMouseOut={onMouseOut}
+        onScroll={() => setTip(null)}
+      >
         <div className="editor__title">{title}</div>
         <EditorContent editor={editor} className="editor__content" />
       </div>

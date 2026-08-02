@@ -41,8 +41,11 @@ export function StartScreen() {
         </header>
 
         {error && (
-          <div className="banner banner--error" onClick={clearError}>
-            {error} <span className="banner__dismiss">✕</span>
+          <div className="banner banner--error" role="alert">
+            {error}
+            <button className="banner__dismiss" onClick={clearError} aria-label="Dismiss error">
+              ✕
+            </button>
           </div>
         )}
 

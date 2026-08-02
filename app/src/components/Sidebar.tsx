@@ -1,7 +1,7 @@
 // Panel boczny: nawigacja po rozdziałach i notatkach autora.
 // Umożliwia dodawanie, zmianę nazwy i usuwanie plików.
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { useStore } from "../store/useStore";
 import type { ActiveKind, FileRef } from "../types";
@@ -14,7 +14,6 @@ export function Sidebar() {
   const createNote = useStore((s) => s.createNote);
   const removeRef = useStore((s) => s.removeRef);
   const renameFile = useStore((s) => s.renameFile);
-  const reorderRef = useStore((s) => s.reorderRef);
   const closeProject = useStore((s) => s.closeProject);
   const toggleSettings = useStore((s) => s.toggleSettings);
 
@@ -23,6 +22,8 @@ export function Sidebar() {
   // Aktualnie zmieniana nazwa (dwuklik na elemencie), null gdy nic nie edytujemy.
   const [editing, setEditing] = useState<{ kind: ActiveKind; id: string } | null>(null);
   const [editTitle, setEditTitle] = useState("");
+  // Klucz ostatnio zatwierdzonej zmiany nazwy — chroni przed podwójnym zapisem.
+  const submittedRef = useRef<string | null>(null);
 
   if (!project) return null;
 
@@ -36,15 +37,24 @@ export function Sidebar() {
   }
 
   function startRename(ref: FileRef, kind: ActiveKind) {
+    submittedRef.current = null;
     setEditing({ kind, id: ref.id });
     setEditTitle(ref.title);
   }
 
+  /** Zatwierdza zmianę nazwy. Enter i utrata focusu wołają to samo, a odmontowanie
+   *  pola po Enterze samo odpala onBlur — bez znacznika zapis poszedłby dwa razy
+   *  (`editing` w domknięciu tego renderu jest wtedy nadal niepuste). */
   async function submitRename() {
     if (!editing) return;
+    const key = editing.kind + ":" + editing.id;
+    if (submittedRef.current === key) return;
+    submittedRef.current = key;
+
     const title = editTitle.trim();
-    if (title) await renameFile(editing.kind, editing.id, title);
+    const target = editing;
     setEditing(null);
+    if (title) await renameFile(target.kind, target.id, title);
   }
 
   // Usunięcie kasuje plik z dysku bezpowrotnie — zawsze pytamy o potwierdzenie.
@@ -57,7 +67,7 @@ export function Sidebar() {
     if (ok) await removeRef(kind, ref.id);
   }
 
-  function renderItem(ref: FileRef, kind: ActiveKind, index: number, count: number) {
+  function renderItem(ref: FileRef, kind: ActiveKind) {
     const isActive = active?.kind === kind && active.id === ref.id;
     const isEditing = editing?.kind === kind && editing.id === ref.id;
 
@@ -90,24 +100,9 @@ export function Sidebar() {
           {ref.title}
         </button>
         <button
-          className="navitem__move"
-          title="Move up"
-          disabled={index === 0}
-          onClick={() => reorderRef(kind, ref.id, -1)}
-        >
-          ↑
-        </button>
-        <button
-          className="navitem__move"
-          title="Move down"
-          disabled={index === count - 1}
-          onClick={() => reorderRef(kind, ref.id, 1)}
-        >
-          ↓
-        </button>
-        <button
           className="navitem__rename"
           title="Rename"
+          aria-label={`Rename ${ref.title}`}
           onClick={() => startRename(ref, kind)}
         >
           ✎
@@ -115,6 +110,7 @@ export function Sidebar() {
         <button
           className="navitem__del"
           title="Delete"
+          aria-label={`Delete ${ref.title}`}
           onClick={() => handleDelete(ref, kind)}
         >
           ✕
@@ -126,7 +122,7 @@ export function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="sidebar__head">
-        <button className="sidebar__back" onClick={closeProject} title="Close project">
+        <button className="sidebar__back" onClick={closeProject} title="Close project" aria-label="Close project">
           ‹
         </button>
         <div className="sidebar__project">
@@ -142,15 +138,14 @@ export function Sidebar() {
             <button
               className="sidebar__add"
               title="Add chapter"
+              aria-label="Add chapter"
               onClick={() => { setAdding("chapter"); setNewTitle(""); }}
             >
               +
             </button>
           </div>
           <ul>
-            {project.chapters.map((c, i) =>
-              renderItem(c, "chapter", i, project.chapters.length),
-            )}
+            {project.chapters.map((c) => renderItem(c, "chapter"))}
           </ul>
           {adding === "chapter" && (
             <AddInput
@@ -169,15 +164,14 @@ export function Sidebar() {
             <button
               className="sidebar__add"
               title="Add note"
+              aria-label="Add note"
               onClick={() => { setAdding("note"); setNewTitle(""); }}
             >
               +
             </button>
           </div>
           <ul>
-            {project.notes.map((n, i) =>
-              renderItem(n, "note", i, project.notes.length),
-            )}
+            {project.notes.map((n) => renderItem(n, "note"))}
           </ul>
           {project.notes.length === 0 && adding !== "note" && (
             <p className="sidebar__empty">e.g. worldbuilding, characters, bibliography</p>
@@ -212,18 +206,31 @@ interface AddInputProps {
 }
 
 function AddInput({ value, onChange, onSubmit, onCancel, placeholder }: AddInputProps) {
+  // Utrata focusu ZATWIERDZA wpisany tytuł, a nie anuluje. Wcześniej kliknięcie
+  // gdziekolwiek obok pola kasowało wpisany tekst — jedynym wyjściem był Enter.
+  // Pusta nazwa dalej znaczy „rezygnuję". Znacznik chroni przed podwójnym
+  // wywołaniem: po Enterze pole znika, co samo odpala onBlur.
+  const done = useRef(false);
+  const finish = (submit: boolean) => {
+    if (done.current) return;
+    done.current = true;
+    if (submit && value.trim()) onSubmit();
+    else onCancel();
+  };
+
   return (
     <div className="addinput">
       <input
         autoFocus
         value={value}
         placeholder={placeholder}
+        aria-label={placeholder}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter") onSubmit();
-          if (e.key === "Escape") onCancel();
+          if (e.key === "Enter") finish(true);
+          if (e.key === "Escape") finish(false);
         }}
-        onBlur={onCancel}
+        onBlur={() => finish(true)}
       />
     </div>
   );

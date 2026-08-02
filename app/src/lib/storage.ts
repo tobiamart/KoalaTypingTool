@@ -65,6 +65,17 @@ export async function saveManifest(project: OpenProject): Promise<void> {
   await writeTextFile(path, JSON.stringify(manifest, null, 2));
 }
 
+/** Czy pod tą ścieżką nadal leży projekt Narwhala? Używane do sprzątania listy
+ *  ostatnich projektów: folder mógł zostać przeniesiony albo usunięty. */
+export async function isProjectFolder(folderPath: string): Promise<boolean> {
+  try {
+    return await exists(await join(folderPath, MANIFEST_NAME));
+  } catch {
+    // Brak uprawnień albo odmontowany dysk — nie twierdzimy, że projekt zniknął.
+    return true;
+  }
+}
+
 /** Wczytuje istniejący projekt z folderu. */
 export async function loadProject(folderPath: string): Promise<OpenProject> {
   const manifestPath = await join(folderPath, MANIFEST_NAME);

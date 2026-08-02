@@ -61,7 +61,13 @@ Stare manifesty z `type` wczytują się dalej; pole znika przy pierwszym zapisie
   editorFont, settingsOpen)
 - `components/` — StartScreen, Sidebar, Editor, EditorToolbar, VerificationPanel, Settings
 - `styles.css` — ciemny minimalistyczny motyw (near-black z eukaliptusowym odcieniem,
-  akcent szałwiowa zieleń)
+  akcent szałwiowa zieleń). **Wszystkie kolory, promienie i cienie pochodzą
+  z tokenów w `:root`** — nie wpisywać wartości na miejscu, bo wtedy motyw
+  przestaje być jednym źródłem prawdy. Promienie mają skalę `--radius-xs|sm|
+  (bazowy)|lg`. Każdy kolor tekstu musi trzymać próg **WCAG AA 4,5:1** na tle,
+  na którym realnie występuje; `--faint` (najsłabszy poziom) leży najbliżej
+  granicy i był już raz poprawiany, więc jego przyciemnienie wymaga policzenia
+  kontrastu, nie oka
 - `lib/storage.test.ts` — testy vitest warstwy dyskowej (`npm test`); pilnują
   scenariuszy utraty treści (kolizje nazw, rename na dysku, kolejność)
 
@@ -144,9 +150,15 @@ ten proxy (`app/src/lib/ai.ts`, `PROXY_URL`).
   `tauri.localhost` (webview Windows), `tauri://localhost` (webview macOS/Linux).
   `allowHeaders` musi jawnie zawierać `Authorization`, inaczej preflight odrzuci
   żądanie z tokenem.
-- **Deploy (TODO):** `npm run deploy` + `wrangler secret put ANTHROPIC_API_KEY`
-  + `wrangler secret put NARWHAL_AUTH_TOKEN`, potem podmienić `PROXY_URL`
-  w `app/src/lib/ai.ts`.
+- **Produkcja:** Worker jest **wdrożony** na własnej domenie `api.narwhal.ink`
+  (`routes` z `custom_domain = true` w `wrangler.toml`, bez adresu
+  `*.workers.dev`); tryb `live` i bramka `on`. Aktualizacja: `npm run deploy`
+  w `server/`. Sekrety wgrywaj **przez potok**, nie interaktywnie:
+  `printf '%s' "$VAL" | wrangler secret put ANTHROPIC_API_KEY` — gdy stdin nie
+  jest terminalem, wrangler nie pyta, połyka puste wejście i zapisuje **pusty
+  sekret**, raportując „Success". Po wdrożeniu sprawdź `curl -s https://api.narwhal.ink`
+  (oczekiwane `mode:"live"`, `auth:"on"`). `PROXY_URL` w `app/src/lib/ai.ts`
+  przełącza się sam: localhost w dev, produkcja w buildzie.
 
 ## Język
 
@@ -157,10 +169,52 @@ ten proxy (`app/src/lib/ai.ts`, `PROXY_URL`).
 
 ## Budowanie i uruchamianie
 
-Skrypty dwuklikowe w root projektu (Windows): **`dev.bat`** (tryb deweloperski,
-hot-reload) i **`build.bat`** (buduje instalator). Wołają `.ps1`.
+Projekt jest rozwijany **na dwóch maszynach równolegle: Windows i macOS**. Żadna
+z nich nie jest „tą główną" — obie instrukcje poniżej są aktualne, a różnice
+sprowadzają się do środowiska kompilacji Rusta i skryptów pomocniczych.
 
-### Windows (obecna maszyna deweloperska)
+Skrypty dwuklikowe w root projektu **działają tylko na Windows**: **`dev.bat`**
+(tryb deweloperski, hot-reload), **`build.bat`** (buduje instalator) i
+**`server-dev.bat`** (serwer proxy). Wołają `.ps1` i ładują środowisko Visual
+Studio — na macOS/Linuksie wołaj `npm` wprost.
+
+### Pierwsze uruchomienie po świeżym klonie (obie platformy)
+
+`npm install` trzeba wykonać **w dwóch katalogach**, a sekrety odtworzyć ręcznie
+— są gitignorowane, więc klon ich nie przynosi:
+
+```bash
+cd app && npm install        # frontend + Tauri CLI
+cd ../server && npm install  # Worker (wrangler); bez tego proxy nie wystartuje
+```
+
+- `server/.dev.vars` — klucz Anthropic (wzór: `.dev.vars.example`). Bez niego
+  serwer działa w trybie atrapy i nic nie kosztuje; **atrapa `sk-ant-...`
+  zostawiona w pliku jest gorsza niż brak pliku** (serwer wejdzie w tryb live
+  i zwróci błąd z API).
+- `app/.env.local` — `VITE_NARWHAL_TOKEN` (wzór: `.env.example`). Potrzebny
+  tylko wtedy, gdy serwer ma włączoną bramkę: lokalnie przy ustawionym
+  `NARWHAL_AUTH_TOKEN`, a **zawsze** przy budowaniu aplikacji produkcyjnej —
+  produkcyjny Worker ma bramkę `on`, więc build bez tokenu dostanie 401.
+
+**Decyzja z 2026-07-31: klucz API nie jest trzymany lokalnie na żadnej maszynie
+deweloperskiej.** Żyje wyłącznie jako sekret Cloudflare (`wrangler secret list`
+pokazuje `ANTHROPIC_API_KEY` i `NARWHAL_AUTH_TOKEN`). Zamiast lokalnego trybu
+live tryb dev celuje w produkcyjnego Workera przez `VITE_NARWHAL_PROXY_URL=https://api.narwhal.ink`
+w `app/.env.local`. Konsekwencje, o których trzeba pamiętać:
+
+- **Każde „Check text" podczas pracy nad kodem to prawdziwy koszt** na koncie
+  Anthropic — nie ma już darmowej piaskownicy w trybie live. Tym pilniejszy
+  staje się limit wydatków w konsoli Anthropic (Blok 1 w `TODO.md`).
+- Do pracy nad samym UI (strumień, podświetlenia, ignorowanie) dalej najtańszy
+  jest **lokalny serwer w trybie atrapy**: zakomentuj `VITE_NARWHAL_PROXY_URL`
+  i uruchom `npm run dev` w `server/` bez klucza.
+- Obowiązuje limit tempa **10 żądań/60 s na IP** — dotyczy też Twoich testów.
+- Rotacja tokenu bramki: `TOKEN=$(openssl rand -hex 32)`, potem `printf '%s' "$TOKEN" | wrangler secret put NARWHAL_AUTH_TOKEN`
+  i ta sama wartość do `VITE_NARWHAL_TOKEN`. **Nowy sekret propaguje się
+  kilkadziesiąt sekund** — 401 tuż po wgraniu nie oznacza błędu, powtórz test.
+
+### Windows
 
 **Kompiluj Rust/Tauri wyłącznie przez PowerShell w Visual Studio Dev Shell — nigdy
 przez Git Bash.** Powód: Git Bash ma `/usr/bin/link.exe` (GNU coreutils), który
@@ -190,12 +244,26 @@ release (bez `--debug`). Podpis aplikacji (certyfikat / Azure Trusted Signing)
 pozostaje w TODO pod dystrybucję — u użytkowników z włączonym SAC niepodpisana
 aplikacja nie uruchomi się.
 
-### macOS / Linux (planowane)
+### macOS / Linux
 
-Nie ma tu problemu z `link.exe`. Wymagany Node + Rust + zależności systemowe Tauri.
-Zwykły `npm install` w `app/`, potem `npm run tauri dev` / `npm run tauri build`.
-Aplikacji na macOS **nie da się zbudować na Windows** (potrzebny macOS + Xcode) —
-docelowo przez GitHub Actions (`tauri-action`). Plik `.exe` z Windows nie zadziała na macOS.
+Nie ma tu problemu z `link.exe` — wystarczy zwykły terminal. Wymagany Node, Rust
+i zależności systemowe Tauri (na macOS: Xcode Command Line Tools).
+
+```bash
+cd app
+npm run tauri dev              # tryb deweloperski
+npm run tauri build            # release: .app + .dmg
+npm run tauri build -- --debug # szybszy build; podwójny `--` jest wymagany
+npm test                       # testy jednostkowe (vitest)
+```
+
+Artefakty lądują w `app/src-tauri/target/{release,debug}/bundle/`. Podpis
+i notaryzacja Apple pozostają w TODO — bez nich `.dmg` u obcego użytkownika
+wywoła ostrzeżenie Gatekeepera.
+
+**Buildów nie da się robić krzyżowo:** `.app`/`.dmg` wymaga macOS z Xcode,
+`.exe`/`.msi` wymaga Windows z MSVC. Docelowo obie platformy z GitHub Actions
+(`tauri-action`).
 
 ## Praca z gitem
 
@@ -205,6 +273,9 @@ gotowe komendy, ale ich nie wykonuj. `.gitignore` ignoruje `node_modules/`, `tar
 
 ## Co dalej
 
-Bieżąca lista zadań jest w **`TODO.md`**. Najbliższe sensowne kroki (do potwierdzenia
-z użytkownikiem, nie zaczynać bez zielonego światła): serwer proxy AI, GitHub Actions
-do budowania, wersja macOS.
+Bieżąca lista zadań jest w **`TODO.md`** — tam też leży kolejność wynikająca
+z łańcucha blokad. Najbliższe sensowne kroki (do potwierdzenia z użytkownikiem,
+nie zaczynać bez zielonego światła): limity kosztów po stronie konta Anthropic
+i plan Workers Paid (Blok 1 — decyzje właściciela, nie kod), potem komfort
+pisania (wyszukiwanie rozdziałów i notatek, foldery notatek) oraz GitHub Actions
+do budowania instalatorów.

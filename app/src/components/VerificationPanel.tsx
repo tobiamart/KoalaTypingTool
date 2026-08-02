@@ -42,6 +42,16 @@ export function VerificationPanel() {
   const [ignoredOpen, setIgnoredOpen] = useState(false);
   const [ignoredList, setIgnoredList] = useState<storage.IgnoredIssue[]>([]);
 
+  // Przełączenie pliku musi wyczyścić CAŁE podsumowanie, nie tylko listę błędów
+  // (tę czyści store). Bez tego po zmianie rozdziału zostawało „No issues found"
+  // i licznik tokenów z poprzedniego pliku — dane, które już go nie dotyczą.
+  useEffect(() => {
+    setStatus("idle");
+    setError(null);
+    setUsage(null);
+    setMockMode(false);
+  }, [active?.kind, active?.id]);
+
   // Wczytaj listę przy otwarciu projektu (licznik na przycisku) i odświeżaj
   // po każdym Ignore/Restore.
   useEffect(() => {
@@ -68,11 +78,20 @@ export function VerificationPanel() {
   const activeRef = findRef(project, active);
   const canCheck = !!activeRef && status !== "checking";
 
+  /** Czy plik, dla którego ruszyło sprawdzanie, jest nadal otwarty. */
+  function isStillActive(startedFor: typeof active): boolean {
+    const now = useStore.getState().active;
+    return now?.kind === startedFor?.kind && now?.id === startedFor?.id;
+  }
+
   async function handleVerify() {
     if (!project) return;
     setStatus("checking");
     setIssues([]);
     setError(null);
+    // Plik, którego dotyczy to sprawdzenie — także dla bloku catch, więc musi
+    // być poza try (użytkownik może w tym czasie przełączyć rozdział).
+    const startedFor = active;
     // Błąd (odczyt notatki, w przyszłości sieć do serwera proxy) nie może
     // zostawić panelu w wiecznym stanie "Checking…".
     try {
@@ -101,16 +120,20 @@ export function VerificationPanel() {
       // Wyniki spływają strumieniem — każdy błąd trafia do store od razu
       // (panel i podświetlenia w edytorze rosną na żywo). Gdyby użytkownik
       // przełączył plik w trakcie, spóźnione wyniki nie mogą go zaśmiecić.
-      const startedFor = active;
       const result = await verifyText({ text: content, notes, chapters }, (issue) => {
         const nowActive = useStore.getState().active;
         if (nowActive?.kind !== startedFor?.kind || nowActive?.id !== startedFor?.id) return;
         if (!isIgnored(issue)) addIssue(issue);
       });
+      // Sprawdzenie mogło się skończyć już po przełączeniu pliku — wtedy jego
+      // podsumowanie należy do poprzedniego rozdziału i nie może tu wjechać.
+      const stillSameFile = isStillActive(startedFor);
+      if (!stillSameFile) return;
       setMockMode(result.mock);
       setUsage(result.usage ?? null);
       setStatus("done");
     } catch (e) {
+      if (!isStillActive(startedFor)) return;
       setError(String(e));
       setStatus("idle");
     }
@@ -119,7 +142,7 @@ export function VerificationPanel() {
   return (
     <section className="verify">
       <div className="verify__head">
-        <button className="verify__close" onClick={toggleVerify} title="Hide panel">
+        <button className="verify__close" onClick={toggleVerify} title="Hide panel" aria-label="Hide fact-check panel">
           ›
         </button>
         <h3>Fact-check</h3>
@@ -132,7 +155,9 @@ export function VerificationPanel() {
         Checks grammar, factual consistency with the other chapters and your notes, and whether the events hold together logically.
       </div>
 
-      <div className="verify__body">
+      {/* aria-live: wyniki spływają strumieniem, więc czytnik ekranu musi je
+          ogłaszać sam — nikt tu nie klika, żeby je „odkryć". */}
+      <div className="verify__body" aria-live="polite" aria-busy={status === "checking"}>
         {error && <p className="verify__error">⚠ Verification failed: {error}</p>}
         {status === "idle" && !error && (
           <p className="verify__placeholder">

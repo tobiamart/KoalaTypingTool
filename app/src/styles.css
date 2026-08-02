@@ -12,24 +12,47 @@
   --surface: #191d1b;
   --elevated: #232825;
 
+  /* Powierzchnia elementów pływających (tooltip) — ciemniejsza niż --elevated,
+     żeby odcinała się od panelu, nad którym wisi. */
+  --panel: #1b1f1d;
+
   /* Obrysy i tekst */
   --border: rgba(255, 255, 255, 0.06);
   --border-strong: rgba(255, 255, 255, 0.11);
   --text: #e7e9e4;
-  --muted: #8b928a;
-  --faint: #565c55;
+  /* Średni poziom tekstu (opisy, etykiety, nieaktywne pozycje list). Rozjaśniony
+     razem z --faint: trzy poziomy mają trzymać wyraźny odstęp kontrastu, inaczej
+     hierarchia przestaje działać. Dziś: 15,4:1 → 7,8:1 → 5,3:1 na --bg. */
+  --muted: #a1a9a0;
+  /* Najsłabszy poziom tekstu. WCAG AA wymaga 4,5:1 dla drobnego pisma, a --faint
+     opisuje właśnie takie: liczniki, ścieżki plików, nagłówki sekcji, placeholdery.
+     Poprzednia wartość (#565c55) dawała 2,74:1 na --bg i 2,48:1 na --surface —
+     poniżej progu nawet dla dużego tekstu. Ta daje 5,27:1 na --bg i 4,77:1
+     na --surface. Nie obniżać bez policzenia kontrastu. */
+  --faint: #818a80;
+  /* Tekst obszaru pisania — o ton stonowany względem --text, żeby długie
+     czytanie mniej męczyło (13,9:1 na --bg, więc daleko powyżej progu). */
+  --text-read: #dcded8;
 
   /* Akcent eukaliptusowy */
   --accent: #83b89e;
   --accent-hover: #97c9b0;
   --accent-dim: rgba(131, 184, 158, 0.14);
   --accent-line: rgba(131, 184, 158, 0.4);
+  /* Tekst na wypełnionym akcencie (przycisk primary) — 8,6:1 na --accent. */
+  --on-accent: #0c0f0d;
 
   /* Kategorie fact-checku i błędy */
   --danger: #d68b7c;
+  --danger-dim: rgba(214, 139, 124, 0.1);
+  --danger-line: rgba(214, 139, 124, 0.3);
   --grammar: #7aa2c7;
   --consistency: #ab8fca;
   --logic: #cbab76;
+
+  /* Przyciemnienie tła pod modalem i cień elementów pływających */
+  --overlay: rgba(0, 0, 0, 0.55);
+  --shadow-float: 0 6px 24px rgba(0, 0, 0, 0.45);
 
   --font-ui: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   /* Czcionki obszaru pisania (wybierane w ustawieniach) */
@@ -39,7 +62,13 @@
   /* Alias używany przez elementy dekoracyjne (nagłówek startu, tytuł projektu) */
   --font-read: var(--font-serif);
 
+  /* Skala promieni — cztery poziomy zamiast wartości wpisywanych na miejscu.
+     xs: podświetlenia w tekście, sm: drobne przyciski i kod, --radius: kontrolki
+     i karty (wcześniej mieszanina 6 i 7 px), lg: modal. */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
   --radius: 7px;
+  --radius-lg: 10px;
   font-family: var(--font-ui);
 }
 
@@ -78,7 +107,7 @@ button { font-family: inherit; cursor: pointer; color: inherit; }
 .btn--primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #0c0f0d;
+  color: var(--on-accent);
   font-weight: 600;
 }
 .btn--primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
@@ -176,14 +205,18 @@ button { font-family: inherit; cursor: pointer; color: inherit; }
   padding: 0.65rem 0.9rem; border-radius: var(--radius); margin-bottom: 1rem; cursor: pointer;
   font-size: 0.85rem;
 }
-.banner--error { background: rgba(214, 139, 124, 0.1); color: var(--danger); border: 1px solid rgba(214, 139, 124, 0.3); }
-.banner__dismiss { float: right; opacity: 0.6; }
+.banner--error { background: var(--danger-dim); color: var(--danger); border: 1px solid var(--danger-line); }
+.banner__dismiss {
+  float: right; opacity: 0.6; background: transparent; border: none;
+  color: inherit; font-size: inherit; padding: 0 0 0 0.5rem;
+}
+.banner__dismiss:hover { opacity: 1; }
 
 /* Pływający baner błędów w workspace (StartScreen ma swój w przepływie strony). */
 .banner--float {
   position: fixed; left: 50%; transform: translateX(-50%); bottom: 1.25rem;
   z-index: 60; max-width: min(640px, calc(100vw - 2rem)); margin: 0;
-  background: var(--elevated); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  background: var(--elevated); box-shadow: var(--shadow-float);
 }
 
 /* ---------- Workspace ---------- */
@@ -212,7 +245,7 @@ button { font-family: inherit; cursor: pointer; color: inherit; }
 .sidebar__head { display: flex; align-items: center; gap: 0.5rem; padding: 0.9rem 0.85rem; }
 .sidebar__back {
   background: transparent; color: var(--muted); border: none;
-  width: 26px; height: 26px; border-radius: 6px; font-size: 1.25rem; line-height: 1;
+  width: 26px; height: 26px; border-radius: var(--radius); font-size: 1.25rem; line-height: 1;
   transition: background 0.15s, color 0.15s;
 }
 .sidebar__back:hover { background: var(--elevated); color: var(--text); }
@@ -232,14 +265,14 @@ button { font-family: inherit; cursor: pointer; color: inherit; }
 }
 .sidebar__add {
   background: transparent; color: var(--faint); border: none;
-  font-size: 1.05rem; line-height: 1; width: 20px; height: 20px; border-radius: 4px;
+  font-size: 1.05rem; line-height: 1; width: 20px; height: 20px; border-radius: var(--radius-sm);
   transition: background 0.15s, color 0.15s;
 }
 .sidebar__add:hover { background: var(--elevated); color: var(--accent); }
 .sidebar__section ul { list-style: none; margin: 0; padding: 0; }
 .sidebar__empty { font-size: 0.75rem; color: var(--faint); padding: 0.25rem 0.6rem; margin: 0; }
 
-.navitem { display: flex; align-items: center; border-radius: 6px; position: relative; }
+.navitem { display: flex; align-items: center; border-radius: var(--radius); position: relative; }
 .navitem:hover { background: var(--surface); }
 .navitem--active { background: var(--accent-dim); box-shadow: inset 2px 0 0 var(--accent); }
 .navitem__label {
@@ -247,25 +280,22 @@ button { font-family: inherit; cursor: pointer; color: inherit; }
   padding: 0.42rem 0.6rem; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .navitem:not(.navitem--active) .navitem__label { color: var(--muted); }
-.navitem__del, .navitem__rename, .navitem__move {
+.navitem__del, .navitem__rename {
   background: transparent; border: none; color: var(--faint);
   padding: 0.2rem 0.35rem; opacity: 0; font-size: 0.78rem; transition: opacity 0.12s, color 0.12s;
 }
-.navitem:hover .navitem__del, .navitem:hover .navitem__rename, .navitem:hover .navitem__move { opacity: 1; }
-.navitem__move:hover:not(:disabled) { color: var(--text); }
-.navitem__move:disabled { opacity: 0; cursor: default; }
-.navitem:hover .navitem__move:disabled { opacity: 0.25; }
+.navitem:hover .navitem__del, .navitem:hover .navitem__rename { opacity: 1; }
 .navitem__rename:hover { color: var(--text); }
 .navitem__del:hover { color: var(--danger); }
 .navitem__edit {
   flex: 1; margin: 0.1rem 0.3rem; padding: 0.35rem 0.55rem;
-  border-radius: 6px; border: 1px solid var(--accent-line);
+  border-radius: var(--radius); border: 1px solid var(--accent-line);
   background: var(--bg); color: var(--text); font-size: 0.88rem;
 }
 
 .addinput { padding: 0.2rem 0.35rem; }
 .addinput input {
-  width: 100%; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid var(--accent-line);
+  width: 100%; padding: 0.4rem 0.6rem; border-radius: var(--radius); border: 1px solid var(--accent-line);
   background: var(--bg); color: var(--text); font-size: 0.86rem;
 }
 .addinput input::placeholder { color: var(--faint); }
@@ -280,7 +310,7 @@ button { font-family: inherit; cursor: pointer; color: inherit; }
   padding: 0.5rem 0.9rem; border-bottom: 1px solid var(--border);
 }
 .tbtn {
-  background: transparent; border: 1px solid transparent; border-radius: 6px;
+  background: transparent; border: 1px solid transparent; border-radius: var(--radius);
   padding: 0.28rem 0.5rem; font-size: 0.83rem; color: var(--muted); min-width: 30px;
   transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
@@ -313,7 +343,7 @@ button { font-family: inherit; cursor: pointer; color: inherit; }
 .ProseMirror {
   outline: none;
   font-family: var(--font-read);
-  font-size: 1.15rem; line-height: 1.8; color: #dcded8; min-height: 300px;
+  font-size: 1.15rem; line-height: 1.8; color: var(--text-read); min-height: 300px;
 }
 .ProseMirror p { margin: 0 0 1.3rem; }
 .ProseMirror h1 { font-size: 1.7rem; font-weight: 600; margin: 2rem 0 0.9rem; }
@@ -326,8 +356,8 @@ button { font-family: inherit; cursor: pointer; color: inherit; }
   color: var(--muted); font-style: italic;
 }
 .ProseMirror code {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  background: var(--elevated); padding: 0.1rem 0.35rem; border-radius: 4px; font-size: 0.85em;
+  font-family: var(--font-mono);
+  background: var(--elevated); padding: 0.1rem 0.35rem; border-radius: var(--radius-sm); font-size: 0.85em;
 }
 .ProseMirror p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
@@ -348,7 +378,7 @@ button { font-family: inherit; cursor: pointer; color: inherit; }
 .verify__head { display: flex; align-items: center; gap: 0.5rem; padding: 0.85rem 0.9rem; border-bottom: 1px solid var(--border); }
 .verify__close {
   background: transparent; border: none; color: var(--muted);
-  width: 24px; height: 24px; border-radius: 6px; font-size: 1.2rem; line-height: 1;
+  width: 24px; height: 24px; border-radius: var(--radius); font-size: 1.2rem; line-height: 1;
   transition: background 0.15s, color 0.15s;
 }
 .verify__close:hover { background: var(--elevated); color: var(--text); }
@@ -378,7 +408,7 @@ button { font-family: inherit; cursor: pointer; color: inherit; }
 .verify__error { color: var(--danger); font-size: 0.82rem; line-height: 1.5; }
 
 .issue {
-  border: 1px solid var(--border); border-left-width: 2px; border-radius: 6px;
+  border: 1px solid var(--border); border-left-width: 2px; border-radius: var(--radius);
   padding: 0.65rem 0.75rem; background: var(--surface);
 }
 .issue--grammar { border-left-color: var(--grammar); }
@@ -387,7 +417,7 @@ button { font-family: inherit; cursor: pointer; color: inherit; }
 .issue__head { display: flex; align-items: center; justify-content: space-between; }
 .issue__ignore {
   background: transparent; border: 1px solid var(--border); color: var(--faint);
-  font-size: 0.65rem; padding: 0.1rem 0.45rem; border-radius: 4px;
+  font-size: 0.65rem; padding: 0.1rem 0.45rem; border-radius: var(--radius-sm);
   transition: color 0.15s, border-color 0.15s;
 }
 .issue__ignore:hover { color: var(--text); border-color: var(--muted); }
@@ -414,7 +444,7 @@ button { font-family: inherit; cursor: pointer; color: inherit; }
 .ignored-row__file { font-size: 0.68rem; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Podświetlenia błędów w tekście edytora (dekoracje ProseMirror). */
-.issue-hl { border-bottom: 2px solid; border-radius: 2px; cursor: help; }
+.issue-hl { border-bottom: 2px solid; border-radius: var(--radius-xs); cursor: help; }
 .issue-hl--grammar { border-bottom-color: var(--grammar); background: color-mix(in srgb, var(--grammar) 14%, transparent); }
 .issue-hl--consistency { border-bottom-color: var(--consistency); background: color-mix(in srgb, var(--consistency) 14%, transparent); }
 .issue-hl--logic { border-bottom-color: var(--logic); background: color-mix(in srgb, var(--logic) 14%, transparent); }
@@ -422,9 +452,9 @@ button { font-family: inherit; cursor: pointer; color: inherit; }
 /* Tooltip nad podświetleniem. */
 .issue-tip {
   position: fixed; z-index: 50; max-width: 340px;
-  background: var(--panel, #1b1f1d); border: 1px solid var(--border);
-  border-radius: 8px; padding: 0.55rem 0.7rem; font-size: 0.8rem;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45); pointer-events: none; line-height: 1.45;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 0.55rem 0.7rem; font-size: 0.8rem;
+  box-shadow: var(--shadow-float); pointer-events: none; line-height: 1.45;
 }
 .issue-tip__type { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; margin-bottom: 0.25rem; }
 .issue-tip__type--grammar { color: var(--grammar); }
@@ -444,7 +474,7 @@ button { font-family: inherit; cursor: pointer; color: inherit; }
 .sidebar__footer { padding: 0.5rem; border-top: 1px solid var(--border); }
 .sidebar__settings {
   width: 100%; text-align: left; background: transparent; border: none;
-  color: var(--muted); padding: 0.5rem 0.6rem; border-radius: 6px; font-size: 0.85rem;
+  color: var(--muted); padding: 0.5rem 0.6rem; border-radius: var(--radius); font-size: 0.85rem;
   transition: background 0.15s, color 0.15s;
 }
 .sidebar__settings:hover { background: var(--surface); color: var(--text); }
@@ -452,21 +482,23 @@ button { font-family: inherit; cursor: pointer; color: inherit; }
 /* ---------- Modal ustawień ---------- */
 .modal {
   position: fixed; inset: 0; z-index: 100;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--overlay);
   display: flex; align-items: center; justify-content: center;
 }
 .modal__panel {
   background: var(--surface); border: 1px solid var(--border-strong);
-  border-radius: 10px; width: 440px; max-width: 90vw; padding: 1.3rem 1.4rem;
+  border-radius: var(--radius-lg); width: 440px; max-width: 90vw; padding: 1.3rem 1.4rem;
 }
 .modal__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.4rem; }
 .modal__head h2 { margin: 0; font-size: 1.05rem; font-weight: 600; }
 .modal__close {
   background: transparent; border: none; color: var(--muted);
-  width: 28px; height: 28px; border-radius: 6px; font-size: 0.85rem;
+  width: 28px; height: 28px; border-radius: var(--radius); font-size: 0.85rem;
   transition: background 0.15s, color 0.15s;
 }
 .modal__close:hover { background: var(--elevated); color: var(--text); }
+
+.settings__section + .settings__section { margin-top: 1.4rem; }
 
 .settings__label {
   font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.09em;
