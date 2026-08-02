@@ -61,9 +61,21 @@ Stare manifesty z `type` wczytują się dalej; pole znika przy pierwszym zapisie
   issues" na dole panelu (cały projekt) z przyciskiem „Restore"
 - `lib/ai.ts` — `verifyText()` woła serwer proxy (`POST /verify`) z timeoutem
   i rozróżnianiem błędów. IssueType = `"grammar" | "consistency" | "logic"`
+- `lib/search.ts` — wyszukiwarka projektu (czysta logika, testy w `search.test.ts`):
+  `fold()` sprowadza tekst do postaci porównawczej **znak w znak** (małe litery
+  bez ogonków), więc „zolw" znajduje „ŻÓŁW", a pozycje trafień dalej pasują
+  do oryginału — ta niezmienność długości jest tu warunkiem poprawności, nie
+  optymalizacją. `searchDocs()` zwraca trafienia z podglądem kontekstu, po trzy
+  na plik, tytułowe przed treściowymi. Indeks buduje `SearchPalette` przy każdym
+  otwarciu (treść z dysku, dla aktywnego pliku wersja ze store'u — inaczej
+  świeżo napisane zdanie byłoby nie do znalezienia)
 - `store/useStore.ts` — Zustand (otwarty projekt, aktywny plik, autozapis, verifyOpen,
-  editorFont, settingsOpen)
-- `components/` — StartScreen, Sidebar, Editor, EditorToolbar, VerificationPanel, Settings
+  editorFont, settingsOpen, searchOpen, reveal)
+- `components/` — StartScreen, Sidebar, Editor, EditorToolbar, VerificationPanel,
+  Settings, SearchPalette (paleta ⌘K / Ctrl+K — skrót łapany w fazie
+  przechwytywania w `App.tsx`, żeby nie połknął go edytor; wybór wyniku ustawia
+  `reveal` w store, a `FileEditor` przewija do wskazanego **wystąpienia**
+  i podświetla je na 2,6 s dekoracją `search-hl`)
 - `styles.css` — ciemny minimalistyczny motyw (near-black z eukaliptusowym odcieniem,
   akcent szałwiowa zieleń). **Wszystkie kolory, promienie i cienie pochodzą
   z tokenów w `:root`** — nie wpisywać wartości na miejscu, bo wtedy motyw

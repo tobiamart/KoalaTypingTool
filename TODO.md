@@ -17,7 +17,9 @@ Zamknięty poza dwoma pozycjami, które są decyzjami właściciela, nie kodem.
 
 ## Blok 2 — komfort pisania
 
-- [ ] Wyszukiwanie rozdziałów i notatek (najbardziej odczuwalne, gdy książka rośnie)
+- [x] Wyszukiwanie rozdziałów i notatek — paleta ⌘K / Ctrl+K (`lib/search.ts`,
+      `components/SearchPalette.tsx`): tytuły i treść, bez wielkości liter
+      i ogonków, skok do trafienia w edytorze
 - [ ] Foldery notatek (grupowanie notatek autora w podfoldery)
 - [ ] **Gramatyka lokalnie** (decyzja odłożona — zależy od docelowego języka
       manuskryptów). Angielski: [Harper](https://writewithharper.com/) jako crate

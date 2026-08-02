@@ -96,6 +96,50 @@ const IssueHighlight = Extension.create({
   },
 });
 
+/* ------------------------------------------------------------------ */
+/* Podświetlenie trafienia z wyszukiwarki                               */
+/* ------------------------------------------------------------------ */
+
+const searchRevealKey = new PluginKey<DecorationSet>("searchReveal");
+
+/**
+ * Znaczy miejsce, do którego przeskoczyła wyszukiwarka. Osobny plugin od
+ * `IssueHighlight`, bo to podświetlenie jest chwilowe (gaśnie po kilku
+ * sekundach) i nie ma nic wspólnego z wynikami fact-checku — trzymane razem
+ * kasowałyby się nawzajem.
+ */
+const SearchReveal = Extension.create({
+  name: "searchReveal",
+  addProseMirrorPlugins() {
+    return [
+      new Plugin<DecorationSet>({
+        key: searchRevealKey,
+        state: {
+          init: () => DecorationSet.empty,
+          apply(tr, old) {
+            const range = tr.getMeta(searchRevealKey) as { from: number; to: number } | null | undefined;
+            if (range === null) return DecorationSet.empty;
+            if (range) {
+              return DecorationSet.create(tr.doc, [
+                Decoration.inline(range.from, range.to, { class: "search-hl" }),
+              ]);
+            }
+            return old.map(tr.mapping, tr.doc);
+          },
+        },
+        props: {
+          decorations(state) {
+            return searchRevealKey.getState(state);
+          },
+        },
+      }),
+    ];
+  },
+});
+
+/** Jak długo trafienie zostaje podświetlone po skoku z wyszukiwarki. */
+const REVEAL_MS = 2600;
+
 /** Stan tooltipa nad podświetleniem. */
 interface IssueTip {
   x: number;
@@ -153,6 +197,8 @@ function FileEditor({ title }: { title: string }) {
   const updateContent = useStore((s) => s.updateContent);
   const saveActive = useStore((s) => s.saveActive);
   const issues = useStore((s) => s.issues);
+  const reveal = useStore((s) => s.reveal);
+  const clearReveal = useStore((s) => s.clearReveal);
 
   // Tooltip nad podświetlonym błędem (null = ukryty).
   const [tip, setTip] = useState<IssueTip | null>(null);
@@ -180,6 +226,7 @@ function FileEditor({ title }: { title: string }) {
       StarterKit,
       BlockquoteExit,
       IssueHighlight,
+      SearchReveal,
       Placeholder.configure({ placeholder: "Start writing…" }),
       CharacterCount,
       Markdown.configure({ html: false, transformPastedText: true }),
@@ -197,6 +244,37 @@ function FileEditor({ title }: { title: string }) {
     editor.view.dispatch(editor.state.tr.setMeta(issueHighlightKey, issues));
     setTip(null);
   }, [editor, issues]);
+
+  // Skok do trafienia z wyszukiwarki: zaznacz fragment, przewiń do niego
+  // i podświetl go na chwilę. Fragment pochodzi z Markdownu, a dokument edytora
+  // ma już zdjęte znaczniki — cytat przecinający np. **pogrubienie** się nie
+  // odnajdzie i wtedy zostaje samo otwarcie pliku.
+  useEffect(() => {
+    if (!editor) return;
+    if (!reveal) {
+      editor.view.dispatch(editor.state.tr.setMeta(searchRevealKey, null));
+      return;
+    }
+
+    const segments: TextSegment[] = [];
+    editor.state.doc.descendants((node, pos) => {
+      if (node.isText && node.text) segments.push({ text: node.text, pos });
+      return true;
+    });
+    // Wybrane wystąpienie, a nie pierwsze z brzegu — inaczej kliknięcie drugiego
+    // trafienia w tym samym rozdziale przewijało zawsze do pierwszego.
+    // Numeracja w Markdownie i w dokumencie edytora może się rozjechać
+    // (znaczniki formatowania), więc przy braku dopasowania wracamy do pierwszego.
+    const ranges = findFragmentRanges(segments, reveal.text, { loose: true });
+    const range = ranges[reveal.occurrence] ?? ranges[0];
+    if (range) {
+      editor.chain().focus().setTextSelection(range).scrollIntoView().run();
+      editor.view.dispatch(editor.state.tr.setMeta(searchRevealKey, range));
+    }
+
+    const t = setTimeout(() => clearReveal(), REVEAL_MS);
+    return () => clearTimeout(t);
+  }, [editor, reveal, clearReveal]);
 
   // Autozapis: 800 ms po ostatniej zmianie.
   useEffect(() => {

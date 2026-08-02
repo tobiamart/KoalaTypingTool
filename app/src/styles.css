@@ -256,6 +256,25 @@ button { font-family: inherit; cursor: pointer; color: inherit; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
+/* Wejście do wyszukiwarki — wygląda jak pole, działa jak przycisk (paleta
+   otwiera się nad wszystkim, więc pisanie odbywa się tam, nie tutaj). */
+.sidebar__search {
+  display: flex; align-items: center; gap: 0.5rem;
+  margin: 0 0.85rem 0.5rem; padding: 0.4rem 0.55rem;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); color: var(--muted); font-size: 0.84rem;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.sidebar__search:hover { background: var(--elevated); border-color: var(--accent-line); color: var(--text); }
+.sidebar__search-icon { font-size: 1rem; line-height: 1; color: var(--faint); }
+.sidebar__search-label { flex: 1; text-align: left; }
+
+.kbd {
+  font-family: var(--font-ui); font-size: 0.65rem; color: var(--faint);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  padding: 0.05rem 0.3rem; line-height: 1.6; white-space: nowrap;
+}
+
 .sidebar__nav { flex: 1; overflow-y: auto; padding: 0.4rem 0.5rem; }
 .sidebar__section { margin-bottom: 1.5rem; }
 .sidebar__section-head {
@@ -469,6 +488,12 @@ button { font-family: inherit; cursor: pointer; color: inherit; }
 .issue-hl--consistency { border-bottom-color: var(--consistency); background: color-mix(in srgb, var(--consistency) 14%, transparent); }
 .issue-hl--logic { border-bottom-color: var(--logic); background: color-mix(in srgb, var(--logic) 14%, transparent); }
 
+/* Trafienie z wyszukiwarki — znika samo po chwili (patrz REVEAL_MS w Editor.tsx). */
+.search-hl {
+  background: var(--accent-dim); border-radius: var(--radius-xs);
+  box-shadow: 0 0 0 1px var(--accent-line);
+}
+
 /* Tooltip nad podświetleniem. */
 .issue-tip {
   position: fixed; z-index: 50; max-width: 340px;
@@ -517,6 +542,58 @@ button { font-family: inherit; cursor: pointer; color: inherit; }
   transition: background 0.15s, color 0.15s;
 }
 .modal__close:hover { background: var(--elevated); color: var(--text); }
+
+/* ---------- Wyszukiwarka projektu (paleta ⌘K / Ctrl+K) ---------- */
+/* Wyżej niż modal ustawień: paleta może się otworzyć skrótem znad niego. */
+.palette {
+  position: fixed; inset: 0; z-index: 110;
+  background: var(--overlay);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 12vh 1rem 2rem;
+}
+.palette__panel {
+  display: flex; flex-direction: column; overflow: hidden;
+  width: 640px; max-width: 100%; max-height: 70vh;
+  background: var(--surface); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-float);
+}
+.palette__field {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.8rem 1rem; border-bottom: 1px solid var(--border);
+}
+.palette__icon { color: var(--faint); font-size: 1.2rem; line-height: 1; }
+.palette__input {
+  flex: 1; min-width: 0; background: transparent; border: none; outline: none;
+  color: var(--text); font-family: inherit; font-size: 1.05rem; padding: 0.1rem 0;
+}
+.palette__input::placeholder { color: var(--faint); }
+
+.palette__results { flex: 1; overflow-y: auto; list-style: none; margin: 0; padding: 0.35rem; }
+.phit { border-radius: var(--radius); }
+.phit--active { background: var(--accent-dim); box-shadow: inset 2px 0 0 var(--accent); }
+.phit__btn {
+  display: flex; flex-direction: column; gap: 0.15rem; width: 100%; min-width: 0;
+  background: transparent; border: none; text-align: left;
+  padding: 0.45rem 0.6rem; border-radius: var(--radius);
+}
+.phit__top { display: flex; align-items: baseline; gap: 0.5rem; min-width: 0; }
+.phit__kind {
+  font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.09em;
+  font-weight: 600; color: var(--faint); flex-shrink: 0;
+}
+.phit__title { font-size: 0.88rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.phit__snippet {
+  font-size: 0.8rem; color: var(--muted); line-height: 1.45;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.phit__mark { background: var(--accent-dim); color: var(--accent); border-radius: var(--radius-xs); padding: 0 0.12rem; }
+
+.palette__empty { padding: 1.3rem 1rem; text-align: center; font-size: 0.85rem; color: var(--faint); }
+.palette__footer {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: 0.5rem 0.9rem; border-top: 1px solid var(--border);
+  font-size: 0.7rem; color: var(--faint); letter-spacing: 0.02em;
+}
 
 .settings__section + .settings__section { margin-top: 1.4rem; }
 

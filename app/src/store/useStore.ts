@@ -66,6 +66,13 @@ interface AppState {
   editorFont: FontChoice;
   /** Czy okno ustawień jest otwarte. */
   settingsOpen: boolean;
+  /** Czy wyszukiwarka projektu (paleta) jest otwarta. */
+  searchOpen: boolean;
+  /** Fragment do pokazania w edytorze po wybraniu wyniku wyszukiwania.
+   *  `occurrence` wskazuje, które wystąpienie fragmentu w pliku wybrano (plik
+   *  może zawierać kilka), a `nonce` rośnie przy każdym wywołaniu, żeby dwa
+   *  razy to samo trafienie też odpaliło przewinięcie. */
+  reveal: { text: string; occurrence: number; nonce: number } | null;
 
   newProject: (parentDir: string, title: string) => Promise<void>;
   openFolder: (path: string) => Promise<void>;
@@ -89,6 +96,15 @@ interface AppState {
   ignoreIssue: (issue: Issue) => Promise<void>;
   setEditorFont: (font: FontChoice) => void;
   toggleSettings: () => void;
+  setSearchOpen: (open: boolean) => void;
+  /** Otwiera plik i prosi edytor o przewinięcie do wskazanego fragmentu. */
+  openSearchHit: (
+    kind: ActiveKind,
+    id: string,
+    fragment: string,
+    occurrence: number,
+  ) => Promise<void>;
+  clearReveal: () => void;
 }
 
 /** Zwraca referencję pliku wskazywaną przez `active` w danym projekcie. */
@@ -110,6 +126,8 @@ export const useStore = create<AppState>((set, get) => ({
   issues: [],
   editorFont: loadFont(),
   settingsOpen: false,
+  searchOpen: false,
+  reveal: null,
 
   newProject: async (parentDir, title) => {
     set({ loading: true, error: null });
@@ -334,4 +352,25 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   toggleSettings: () => set((s) => ({ settingsOpen: !s.settingsOpen })),
+
+  // Otwarcie palety zamyka okno ustawień: modal ustawień trzyma focus w pułapce
+  // (Tab krąży w jego panelu) i sam obsługuje Escape, więc oba naraz walczyłyby
+  // o klawiaturę.
+  setSearchOpen: (open) =>
+    set(open ? { searchOpen: true, settingsOpen: false } : { searchOpen: false }),
+
+  openSearchHit: async (kind, id, fragment, occurrence) => {
+    // Najpierw przełącz plik (to zapisuje bieżący i wczytuje nowy), dopiero
+    // potem poproś o przewinięcie — edytor montuje się na nowo przy zmianie
+    // pliku i i tak przeczytałby `reveal` dopiero po zamontowaniu.
+    await get().selectFile(kind, id);
+    set({ searchOpen: false });
+    if (fragment) {
+      set((s) => ({
+        reveal: { text: fragment, occurrence, nonce: (s.reveal?.nonce ?? 0) + 1 },
+      }));
+    }
+  },
+
+  clearReveal: () => set({ reveal: null }),
 }));

@@ -4,6 +4,7 @@
 import { useRef, useState } from "react";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { useStore } from "../store/useStore";
+import { SEARCH_SHORTCUT } from "../lib/platform";
 import type { ActiveKind, FileRef } from "../types";
 
 export function Sidebar() {
@@ -17,6 +18,7 @@ export function Sidebar() {
   const moveRefTo = useStore((s) => s.moveRefTo);
   const closeProject = useStore((s) => s.closeProject);
   const toggleSettings = useStore((s) => s.toggleSettings);
+  const setSearchOpen = useStore((s) => s.setSearchOpen);
 
   const [adding, setAdding] = useState<ActiveKind | null>(null);
   const [newTitle, setNewTitle] = useState("");
@@ -201,6 +203,18 @@ export function Sidebar() {
           <span className="sidebar__title">{project.title}</span>
         </div>
       </div>
+
+      <button
+        className="sidebar__search"
+        onClick={() => setSearchOpen(true)}
+        title={`Search chapters and notes (${SEARCH_SHORTCUT})`}
+      >
+        <span className="sidebar__search-icon" aria-hidden="true">
+          ⌕
+        </span>
+        <span className="sidebar__search-label">Search</span>
+        <kbd className="kbd">{SEARCH_SHORTCUT}</kbd>
+      </button>
 
       <nav className="sidebar__nav">
         <div className="sidebar__section">

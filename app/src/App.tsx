@@ -7,6 +7,8 @@ import { Sidebar } from "./components/Sidebar";
 import { Editor } from "./components/Editor";
 import { VerificationPanel } from "./components/VerificationPanel";
 import { Settings } from "./components/Settings";
+import { SearchPalette } from "./components/SearchPalette";
+import { isMac } from "./lib/platform";
 import "./styles.css";
 
 const SIDEBAR_KEY = "narwhal.sidebarWidth";
@@ -73,6 +75,24 @@ function App() {
     localStorage.setItem(VERIFY_KEY, String(verifyWidth));
   }, [verifyWidth]);
 
+  // Skrót wyszukiwarki: ⌘K na macOS, Ctrl+K gdzie indziej. Nasłuch w fazie
+  // przechwytywania z preventDefault — inaczej skrót mógłby trafić najpierw do
+  // edytora (TipTap ma własne wiązania klawiszy) albo do webview.
+  // Ten sam skrót zamyka paletę, gdy jest otwarta.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const mod = isMac ? e.metaKey : e.ctrlKey;
+      if (!mod || e.altKey || e.key.toLowerCase() !== "k") return;
+      // Bez otwartego projektu nie ma czego szukać (ekran startowy).
+      const { project: open, searchOpen, setSearchOpen } = useStore.getState();
+      if (!open) return;
+      e.preventDefault();
+      setSearchOpen(!searchOpen);
+    }
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
+  }, []);
+
   // Przy zamykaniu okna dopchnij niezapisane zmiany na dysk (autozapis ma 800 ms
   // opóźnienia — bez tego ostatnie sekundy pisania mogłyby przepaść).
   useEffect(() => {
@@ -132,6 +152,7 @@ function App() {
         </>
       )}
       <Settings />
+      <SearchPalette />
       {/* role="alert" sprawia, że czytnik ekranu ogłosi błąd sam; zamknięcie
           jest przyciskiem, więc działa też z klawiatury. */}
       {error && (

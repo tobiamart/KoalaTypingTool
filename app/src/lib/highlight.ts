@@ -5,6 +5,8 @@
 // jest podzielony na węzły tekstowe (bloki, formatowanie). Sklejamy segmenty
 // w jeden ciąg z mapą offset → pozycja dokumentu i szukamy cytatu w całości.
 
+import { fold } from "./search";
+
 /** Węzeł tekstowy dokumentu: treść + pozycja startowa w dokumencie. */
 export interface TextSegment {
   text: string;
@@ -16,6 +18,13 @@ export interface TextSegment {
 export interface Range {
   from: number;
   to: number;
+}
+
+/** Opcje szukania. */
+export interface FindOptions {
+  /** Pomija wielkość liter i znaki diakrytyczne (wyszukiwarka projektu).
+   *  Fact-check cytuje tekst dosłownie, więc tam zostaje porównanie ścisłe. */
+  loose?: boolean;
 }
 
 /** Separator wstawiany między segmentami przy sklejaniu — blokuje fałszywe
@@ -30,7 +39,11 @@ const SEP = "\n";
  * (akapicie), ale może przecinać granice formatowania (bold/italic),
  * o ile segmenty sąsiadują bez przerwy (pos ciągłe).
  */
-export function findFragmentRanges(segments: TextSegment[], fragment: string): Range[] {
+export function findFragmentRanges(
+  segments: TextSegment[],
+  fragment: string,
+  options: FindOptions = {},
+): Range[] {
   if (!fragment) return [];
 
   // Sklej sąsiadujące segmenty (pos ciągłe = to samo zdanie przecięte
@@ -52,13 +65,18 @@ export function findFragmentRanges(segments: TextSegment[], fragment: string): R
     prevEnd = seg.pos + seg.text.length;
   }
 
+  // `fold` zamienia znak w znak (nie zmienia długości), więc offsety policzone
+  // wyżej dalej wskazują właściwe pozycje dokumentu.
+  const haystack = options.loose ? fold(joined) : joined;
+  const needle = options.loose ? fold(fragment) : fragment;
+
   const ranges: Range[] = [];
-  let idx = joined.indexOf(fragment);
+  let idx = haystack.indexOf(needle);
   while (idx !== -1) {
     const from = offsets[idx];
-    const to = offsets[idx + fragment.length - 1] + 1;
+    const to = offsets[idx + needle.length - 1] + 1;
     ranges.push({ from, to });
-    idx = joined.indexOf(fragment, idx + 1);
+    idx = haystack.indexOf(needle, idx + 1);
   }
   return ranges;
 }
