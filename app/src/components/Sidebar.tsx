@@ -14,6 +14,7 @@ export function Sidebar() {
   const createNote = useStore((s) => s.createNote);
   const removeRef = useStore((s) => s.removeRef);
   const renameFile = useStore((s) => s.renameFile);
+  const moveRefTo = useStore((s) => s.moveRefTo);
   const closeProject = useStore((s) => s.closeProject);
   const toggleSettings = useStore((s) => s.toggleSettings);
 
@@ -24,6 +25,42 @@ export function Sidebar() {
   const [editTitle, setEditTitle] = useState("");
   // Klucz ostatnio zatwierdzonej zmiany nazwy — chroni przed podwójnym zapisem.
   const submittedRef = useRef<string | null>(null);
+
+  // Przeciąganie: element trzymany w ręce i miejsce, w które trafi.
+  const [drag, setDrag] = useState<{ kind: ActiveKind; id: string; index: number } | null>(null);
+  const [dropAt, setDropAt] = useState<{ kind: ActiveKind; index: number; after: boolean } | null>(
+    null,
+  );
+
+  function endDrag() {
+    setDrag(null);
+    setDropAt(null);
+  }
+
+  function handleDragOver(e: React.DragEvent, kind: ActiveKind, index: number) {
+    // Rozdziały i notatki to osobne foldery na dysku — nie mieszamy ich.
+    if (!drag || drag.kind !== kind) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    const box = e.currentTarget.getBoundingClientRect();
+    const after = e.clientY > box.top + box.height / 2;
+    setDropAt((prev) =>
+      prev && prev.kind === kind && prev.index === index && prev.after === after
+        ? prev // ten sam cel — bez zbędnego renderu przy każdym ruchu myszy
+        : { kind, index, after },
+    );
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    if (!drag || !dropAt || drag.kind !== dropAt.kind) return endDrag();
+    // Pozycja liczona w liście SPRZED wyjęcia elementu, więc przy ruchu w dół
+    // trzeba ją cofnąć o jeden — inaczej element ląduje o pozycję za daleko.
+    const insertAt = dropAt.index + (dropAt.after ? 1 : 0);
+    const target = insertAt > drag.index ? insertAt - 1 : insertAt;
+    void moveRefTo(drag.kind, drag.id, target);
+    endDrag();
+  }
 
   if (!project) return null;
 
@@ -67,9 +104,16 @@ export function Sidebar() {
     if (ok) await removeRef(kind, ref.id);
   }
 
-  function renderItem(ref: FileRef, kind: ActiveKind) {
+  function renderItem(ref: FileRef, kind: ActiveKind, index: number, count: number) {
     const isActive = active?.kind === kind && active.id === ref.id;
     const isEditing = editing?.kind === kind && editing.id === ref.id;
+    const isDragged = drag?.kind === kind && drag.id === ref.id;
+    const marker =
+      dropAt && dropAt.kind === kind && dropAt.index === index && !isDragged
+        ? dropAt.after
+          ? " navitem--drop-after"
+          : " navitem--drop-before"
+        : "";
 
     if (isEditing) {
       return (
@@ -90,12 +134,39 @@ export function Sidebar() {
     }
 
     return (
-      <li key={ref.id} className={"navitem" + (isActive ? " navitem--active" : "")}>
+      <li
+        key={ref.id}
+        className={
+          "navitem" +
+          (isActive ? " navitem--active" : "") +
+          (isDragged ? " navitem--dragging" : "") +
+          marker
+        }
+        draggable
+        onDragStart={(e) => {
+          setDrag({ kind, id: ref.id, index });
+          e.dataTransfer.effectAllowed = "move";
+          // Bez setData część przeglądarek w ogóle nie rozpoczyna przeciągania.
+          e.dataTransfer.setData("text/plain", ref.id);
+        }}
+        onDragOver={(e) => handleDragOver(e, kind, index)}
+        onDrop={handleDrop}
+        onDragEnd={endDrag}
+      >
         <button
           className="navitem__label"
           onClick={() => selectFile(kind, ref.id)}
           onDoubleClick={() => startRename(ref, kind)}
-          title="Double-click to rename"
+          // Przeciąganie myszą jest niedostępne z klawiatury, więc ten sam ruch
+          // robi Alt + strzałka — inaczej kolejności nie dałoby się zmienić bez myszy.
+          onKeyDown={(e) => {
+            if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+            e.preventDefault();
+            const target = e.key === "ArrowUp" ? index - 1 : index + 1;
+            if (target < 0 || target >= count) return;
+            void moveRefTo(kind, ref.id, target);
+          }}
+          title="Drag to reorder · double-click to rename"
         >
           {ref.title}
         </button>
@@ -145,7 +216,9 @@ export function Sidebar() {
             </button>
           </div>
           <ul>
-            {project.chapters.map((c) => renderItem(c, "chapter"))}
+            {project.chapters.map((c, i) =>
+              renderItem(c, "chapter", i, project.chapters.length),
+            )}
           </ul>
           {adding === "chapter" && (
             <AddInput
@@ -171,7 +244,7 @@ export function Sidebar() {
             </button>
           </div>
           <ul>
-            {project.notes.map((n) => renderItem(n, "note"))}
+            {project.notes.map((n, i) => renderItem(n, "note", i, project.notes.length))}
           </ul>
           {project.notes.length === 0 && adding !== "note" && (
             <p className="sidebar__empty">e.g. worldbuilding, characters, bibliography</p>

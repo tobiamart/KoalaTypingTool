@@ -78,6 +78,8 @@ interface AppState {
   createNote: (title: string) => Promise<string | null>;
   removeRef: (kind: ActiveKind, id: string) => Promise<void>;
   renameFile: (kind: ActiveKind, id: string, title: string) => Promise<void>;
+  /** Przenosi rozdział lub notatkę na wskazaną pozycję (przeciąganie w sidebarze). */
+  moveRefTo: (kind: ActiveKind, id: string, toIndex: number) => Promise<void>;
   clearError: () => void;
   toggleVerify: () => void;
   setIssues: (issues: Issue[]) => void;
@@ -275,6 +277,25 @@ export const useStore = create<AppState>((set, get) => ({
       set({ project: updated });
     } catch (e) {
       set({ error: String(e) });
+    }
+  },
+
+  moveRefTo: async (kind, id, toIndex) => {
+    const { project } = get();
+    if (!project) return;
+
+    const updated = storage.reorderRefs(project, kind, id, toIndex);
+    // Ten sam obiekt = ruch bez efektu; nie ma po co ruszać widoku ani dysku.
+    if (updated === project) return;
+
+    // Najpierw widok, potem dysk. Zapis manifestu idzie przez IPC i trwa na tyle
+    // długo, że lista zauważalnie „doganiała" mysz, gdy render czekał na zapis.
+    set({ project: updated });
+    try {
+      await storage.saveManifest(updated);
+    } catch (e) {
+      // Zapis padł — cofamy kolejność, żeby widok nie kłamał o stanie dysku.
+      set({ project, error: "Saving the new order failed: " + String(e) });
     }
   },
 

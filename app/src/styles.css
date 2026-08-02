@@ -272,10 +272,30 @@ button { font-family: inherit; cursor: pointer; color: inherit; }
 .sidebar__section ul { list-style: none; margin: 0; padding: 0; }
 .sidebar__empty { font-size: 0.75rem; color: var(--faint); padding: 0.25rem 0.6rem; margin: 0; }
 
-.navitem { display: flex; align-items: center; border-radius: var(--radius); position: relative; }
+.navitem {
+  display: flex; align-items: center; border-radius: var(--radius); position: relative;
+  /* WKWebView nie przeciąga dowolnych elementów na sam atrybut `draggable` —
+     trzeba mu to powiedzieć wprost. Bez tego lista jest nieruchoma na macOS. */
+  -webkit-user-drag: element;
+}
 .navitem:hover { background: var(--surface); }
 .navitem--active { background: var(--accent-dim); box-shadow: inset 2px 0 0 var(--accent); }
+/* Przeciąganie w sidebarze: element w ręce blednie, a linia w kolorze akcentu
+   pokazuje, gdzie trafi po puszczeniu. */
+.navitem--dragging { opacity: 0.4; }
+.navitem--drop-before::before,
+.navitem--drop-after::after {
+  content: ""; position: absolute; left: 0.3rem; right: 0.3rem; height: 2px;
+  background: var(--accent); border-radius: var(--radius-xs); pointer-events: none;
+}
+.navitem--drop-before::before { top: -1px; }
+.navitem--drop-after::after { bottom: -1px; }
+
 .navitem__label {
+  cursor: grab;
+  /* Zaznaczanie tekstu wygrywa z chwytem myszy — przy przeciąganiu
+     etykiety chcemy chwytu, nie zaznaczenia. */
+  user-select: none;
   flex: 1; background: transparent; border: none; text-align: left; color: var(--text);
   padding: 0.42rem 0.6rem; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }

@@ -322,20 +322,37 @@ export async function removeIgnoredIssue(
   return updated;
 }
 
-/** Przesuwa rozdział lub notatkę o jedną pozycję w górę (-1) lub w dół (+1). */
-export async function moveRef(
+/**
+ * Zwraca projekt z rozdziałem lub notatką przestawioną na wskazaną pozycję.
+ *
+ * **Czysta funkcja — nie dotyka dysku.** Zapis (`saveManifest`) należy do
+ * wywołującego, bo sidebar musi przerysować listę natychmiast po puszczeniu
+ * elementu, a dopiero potem utrwalić zmianę; czekanie na IPC przed renderem
+ * dawało odczuwalne opóźnienie.
+ *
+ * `toIndex` to docelowy indeks **w liście po przeniesieniu** — taki, jaki
+ * element ma ostatecznie zająć. Wartość poza zakresem jest przycinana, a brak
+ * ruchu zwraca ten sam obiekt (wywołujący pozna to po tożsamości referencji).
+ *
+ * Kolejność żyje wyłącznie w manifeście: nazwy plików z prefiksem „NN-"
+ * zostają nietknięte, bo zmiana nazw przy każdym przeciągnięciu oznaczałaby
+ * lawinę operacji na dysku i ryzyko dla treści.
+ */
+export function reorderRefs(
   project: OpenProject,
   kind: "chapter" | "note",
   id: string,
-  delta: -1 | 1,
-): Promise<OpenProject> {
+  toIndex: number,
+): OpenProject {
   const list = [...(kind === "chapter" ? project.chapters : project.notes)];
-  const i = list.findIndex((r) => r.id === id);
-  const j = i + delta;
-  if (i < 0 || j < 0 || j >= list.length) return project;
-  [list[i], list[j]] = [list[j], list[i]];
-  const updated: OpenProject =
-    kind === "chapter" ? { ...project, chapters: list } : { ...project, notes: list };
-  await saveManifest(updated);
-  return updated;
+  const from = list.findIndex((r) => r.id === id);
+  if (from < 0) return project;
+
+  const to = Math.max(0, Math.min(list.length - 1, toIndex));
+  if (from === to) return project;
+
+  const [ref] = list.splice(from, 1);
+  list.splice(to, 0, ref);
+
+  return kind === "chapter" ? { ...project, chapters: list } : { ...project, notes: list };
 }

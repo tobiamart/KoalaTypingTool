@@ -46,7 +46,11 @@ Stare manifesty z `type` wczytują się dalej; pole znika przy pierwszym zapisie
 
 - `types.ts` — modele domenowe (FileRef, ProjectManifest, OpenProject, FontChoice…)
 - `lib/storage.ts` — I/O plików przez plugin-fs (createProject, loadProject, addChapter,
-  addNote, renameRef, deleteRef…); `slugify()` transliteruje polskie znaki;
+  addNote, renameRef, deleteRef, moveRefTo…); `slugify()` transliteruje polskie znaki;
+  **kolejność rozdziałów i notatek żyje wyłącznie w manifeście** — przeciągnięcie
+  w sidebarze nie przenumerowuje plików, więc `03-targ.md` może być pierwszym
+  rozdziałem. Świadome: przenumerowanie oznaczałoby lawinę zmian nazw na dysku
+  przy każdym ruchu, a nazwa pliku nie jest źródłem prawdy o kolejności;
   ignorowane błędy fact-checku w `ignored-issues.json` w folderze projektu
   (klucz: plik + typ + cytat)
 - `lib/highlight.ts` — mapowanie cytatów z fact-checku na zakresy dokumentu
@@ -81,6 +85,17 @@ w capabilities); `saveActive` zwraca boolean i błędy zapisu lądują w `error`
 Rust (`app/src-tauri/`): init pluginów (opener, dialog, fs) + `register_spellcheck_defaults()`
 dla macOS — **brak własnych komend** (`invoke`) i tak ma zostać.
 Uprawnienia w `capabilities/default.json` (scope `$HOME/**`).
+
+**Przeciąganie (HTML5 DnD) wymaga `"dragDropEnabled": false`** w oknie
+(`tauri.conf.json`). Mimo nazwy ta opcja znaczy „działa **wewnętrzny** system
+drag-and-drop Tauri, a DOM-owy jest wyłączony" — z domyślnym `true` warstwa
+natywna połyka zdarzenia, zanim dojdą do webview, i sortowanie listy w sidebarze
+po prostu nic nie robi. W przeglądarce tego problemu nie widać, bo tam nie ma
+warstwy natywnej — **testuj DnD w zbudowanej aplikacji, nie w Vite**.
+Na macOS dochodzi drugi warunek: WKWebView nie przeciąga dowolnych elementów
+na sam atrybut `draggable`, potrzebuje `-webkit-user-drag: element` (jest
+w `.navitem` w `styles.css`). Wyłączenie `dragDropEnabled` nic nie kosztuje,
+dopóki aplikacja nie obsługuje upuszczania plików z systemu.
 
 **Sprawdzanie pisowni** korzysta z natywnego mechanizmu webview (słowniki systemowe,
 zero bajtów w instalatorze). Wymaga *dwóch* rzeczy naraz: atrybutu `spellcheck`
@@ -196,6 +211,9 @@ cd ../server && npm install  # Worker (wrangler); bez tego proxy nie wystartuje
   tylko wtedy, gdy serwer ma włączoną bramkę: lokalnie przy ustawionym
   `NARWHAL_AUTH_TOKEN`, a **zawsze** przy budowaniu aplikacji produkcyjnej —
   produkcyjny Worker ma bramkę `on`, więc build bez tokenu dostanie 401.
+- **Skille globalne** (`frontend-design`, `webapp-testing`) też nie przychodzą
+  z klonem — komendy w sekcji „Skille Claude Code" niżej. Skille projektowe
+  (`run`, `verify`) są w repo i działają od razu.
 
 **Decyzja z 2026-07-31: klucz API nie jest trzymany lokalnie na żadnej maszynie
 deweloperskiej.** Żyje wyłącznie jako sekret Cloudflare (`wrangler secret list`
@@ -264,6 +282,56 @@ wywoła ostrzeżenie Gatekeepera.
 **Buildów nie da się robić krzyżowo:** `.app`/`.dmg` wymaga macOS z Xcode,
 `.exe`/`.msi` wymaga Windows z MSVC. Docelowo obie platformy z GitHub Actions
 (`tauri-action`).
+
+## Skille Claude Code
+
+Dwa rodzaje, o różnym losie przy klonowaniu repozytorium.
+
+**Projektowe — w repo, przychodzą z klonem** (`.claude/skills/`, nic nie trzeba robić):
+
+- **`run`** — uruchamianie aplikacji i serwera proxy (dwa procesy, porty 8787 i 1420),
+  sprawdzanie zajętych portów, budowanie instalatorów, pułapki per platforma.
+- **`verify`** — sprawdzenie zmiany od statyki po realne wywołanie fact-checku
+  (typecheck → testy → strumień NDJSON → kategorie błędów → prompt cache).
+
+**Globalne — poza repo, `git pull` ich NIE przyniesie** (`~/.agents/skills/`
+z dowiązaniem w `~/.claude/skills/`). Po przesiadce na drugą maszynę trzeba je
+doinstalować ręcznie:
+
+```bash
+npx skills add anthropics/claude-code -s frontend-design -g -y
+npx skills add anthropics/skills     -s webapp-testing  -g -y
+```
+
+- **`frontend-design`** (Anthropic) — kierunek wizualny przy nowych ekranach.
+  Uwaga: skill pcha ku „odważnym" wyborom i elementom sygnaturowym, a Narwhal
+  jest narzędziem do pisania, gdzie bohaterem ma być tekst użytkownika, nie
+  interfejs. Używać do nowych widoków, nie do przemeblowania motywu.
+- **`webapp-testing`** (Anthropic) — Playwright: zrzuty ekranu, klikanie, logi
+  konsoli. Wymaga dodatkowo Pythona z Playwrightem (`python3 -m venv venv`,
+  `pip install playwright`, `playwright install chromium`) — instaluj **poza
+  repo** (katalog roboczy sesji), nie w projekcie.
+
+Wbudowane i zawsze dostępne: `claude-api` (obowiązkowo przy każdej zmianie
+wywołań modelu w `server/src/index.ts` — patrz `verify`), `code-review`,
+`security-review`.
+
+### Podgląd aplikacji w przeglądarce
+
+Frontend da się otworzyć w zwykłym Chromium (`webapp-testing`) **tylko
+z atrapą IPC Tauri** — bez niej React wywala się od razu. Atrapa jest plikiem
+roboczym sesji, nie repozytorium, więc odtwarza się ją przy potrzebie; dwie
+rzeczy, na których to przewraca się za pierwszym razem:
+
+- `window.__TAURI_INTERNALS__.metadata.currentWindow` musi istnieć, inaczej
+  `getCurrentWindow()` w `App.tsx` rzuca przy rejestrowaniu `onCloseRequested`;
+- `read_text_file` musi zwracać **bajty** (`Array.from(new TextEncoder()...)`),
+  bo plugin-fs dekoduje odpowiedź przez `TextDecoder` — string daje pustkę
+  i mylący błąd „Unexpected token … is not valid JSON".
+
+Czego w przeglądarce sprawdzić **nie można**: przeciągania (patrz
+`dragDropEnabled` wyżej), dialogów systemowych i sprawdzania pisowni. Te
+wymagają zbudowanej aplikacji.
 
 ## Praca z gitem
 

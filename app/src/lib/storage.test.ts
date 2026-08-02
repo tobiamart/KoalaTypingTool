@@ -163,25 +163,73 @@ describe("renameRef", () => {
   });
 });
 
-describe("moveRef", () => {
-  it("przesuwa rozdział i utrwala kolejność w manifeście", async () => {
-    const p = await storage.createProject(PARENT, "Book");
-    const { project: p2 } = await storage.addChapter(p, "Second");
-    const [a, b] = p2.chapters;
-    const moved = await storage.moveRef(p2, "chapter", b.id, -1);
+describe("reorderRefs", () => {
+  /** Projekt z rozdziałami "1".."n" — ułatwia czytanie oczekiwanej kolejności. */
+  async function withChapters(n: number) {
+    let p = await storage.createProject(PARENT, "Book");
+    for (let i = 2; i <= n; i++) p = (await storage.addChapter(p, `Ch ${i}`)).project;
+    return p;
+  }
+
+  it("przesuwa rozdział w górę i utrwala kolejność w manifeście", async () => {
+    const p = await withChapters(2);
+    const [a, b] = p.chapters;
+    const moved = storage.reorderRefs(p, "chapter", b.id, 0);
     expect(moved.chapters.map((c) => c.id)).toEqual([b.id, a.id]);
-    // Kolejność musi przetrwać zapis i odczyt manifestu.
+    // Kolejność musi przetrwać zapis i odczyt manifestu (zapis robi wywołujący).
+    await storage.saveManifest(moved);
     const reloaded = await storage.loadProject(p.path);
     expect(reloaded.chapters.map((c) => c.id)).toEqual([b.id, a.id]);
   });
 
-  it("ignoruje ruch poza zakres", async () => {
-    const p = await storage.createProject(PARENT, "Book");
-    const only = p.chapters[0];
-    const up = await storage.moveRef(p, "chapter", only.id, -1);
-    expect(up.chapters).toEqual(p.chapters);
-    const down = await storage.moveRef(p, "chapter", only.id, 1);
-    expect(down.chapters).toEqual(p.chapters);
+  it("przenosi element z początku na koniec (przeciągnięcie w dół)", async () => {
+    const p = await withChapters(4);
+    const ids = p.chapters.map((c) => c.id);
+    const moved = storage.reorderRefs(p, "chapter", ids[0], 3);
+    expect(moved.chapters.map((c) => c.id)).toEqual([ids[1], ids[2], ids[3], ids[0]]);
+  });
+
+  it("przenosi element z końca w środek (przeciągnięcie w górę)", async () => {
+    const p = await withChapters(4);
+    const ids = p.chapters.map((c) => c.id);
+    const moved = storage.reorderRefs(p, "chapter", ids[3], 1);
+    expect(moved.chapters.map((c) => c.id)).toEqual([ids[0], ids[3], ids[1], ids[2]]);
+  });
+
+  it("nie gubi ani nie duplikuje wpisów przy żadnym ruchu", async () => {
+    const p = await withChapters(5);
+    const ids = p.chapters.map((c) => c.id);
+    for (let to = 0; to < 5; to++) {
+      const moved = storage.reorderRefs(p, "chapter", ids[2], to);
+      const got = moved.chapters.map((c) => c.id);
+      expect(got).toHaveLength(5);
+      expect(new Set(got)).toEqual(new Set(ids));
+      expect(got[to]).toBe(ids[2]);
+    }
+  });
+
+  it("przycina indeks poza zakresem i nie rusza listy bez potrzeby", async () => {
+    const p = await withChapters(2);
+    const ids = p.chapters.map((c) => c.id);
+    // Indeks większy niż lista → koniec listy.
+    const past = storage.reorderRefs(p, "chapter", ids[0], 99);
+    expect(past.chapters.map((c) => c.id)).toEqual([ids[1], ids[0]]);
+    // Ujemny → początek.
+    const before = storage.reorderRefs(p, "chapter", ids[1], -5);
+    expect(before.chapters.map((c) => c.id)).toEqual([ids[1], ids[0]]);
+    // Ruch w to samo miejsce zwraca ten sam obiekt — to sygnał dla store,
+    // że nie ma czego zapisywać.
+    expect(storage.reorderRefs(p, "chapter", ids[0], 0)).toBe(p);
+  });
+
+  it("działa tak samo dla notatek", async () => {
+    let p = await storage.createProject(PARENT, "Book");
+    p = (await storage.addNote(p, "Alpha")).project;
+    p = (await storage.addNote(p, "Beta")).project;
+    const ids = p.notes.map((n) => n.id);
+    const moved = storage.reorderRefs(p, "note", ids[1], 0);
+    expect(moved.notes.map((n) => n.id)).toEqual([ids[1], ids[0]]);
+    expect(moved.chapters).toEqual(p.chapters);
   });
 });
 
