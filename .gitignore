@@ -50,3 +50,9 @@ desktop.ini
 .idea/
 *.swp
 *.sw?
+
+# ── Claude Code ──
+# Worktree'e sesji. Każdy z nich ma własny plik .git, więc `git add -A`
+# w korzeniu wciąga katalog jako gitlink (tryb 160000) — fantomowy submoduł,
+# którego żaden klon nie pobierze. Skille w .claude/skills/ zostają śledzone.
+.claude/worktrees/
