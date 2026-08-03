@@ -493,7 +493,8 @@ button { font-family: inherit; cursor: pointer; color: inherit; }
 .issue-hl--consistency { border-bottom-color: var(--consistency); background: color-mix(in srgb, var(--consistency) 14%, transparent); }
 .issue-hl--logic { border-bottom-color: var(--logic); background: color-mix(in srgb, var(--logic) 14%, transparent); }
 
-/* Trafienie z wyszukiwarki — znika samo po chwili (patrz REVEAL_MS w Editor.tsx). */
+/* Trafienie z wyszukiwarki — gaśnie przy pierwszym kliknięciu albo klawiszu
+   (nasłuch w Editor.tsx), nie po odliczonym czasie. */
 .search-hl {
   background: var(--accent-dim); border-radius: var(--radius-xs);
   box-shadow: 0 0 0 1px var(--accent-line);

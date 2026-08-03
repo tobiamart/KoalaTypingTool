@@ -137,9 +137,6 @@ const SearchReveal = Extension.create({
   },
 });
 
-/** Jak długo trafienie zostaje podświetlone po skoku z wyszukiwarki. */
-const REVEAL_MS = 2600;
-
 /** Stan tooltipa nad podświetleniem. */
 interface IssueTip {
   x: number;
@@ -268,12 +265,32 @@ function FileEditor({ title }: { title: string }) {
     const ranges = findFragmentRanges(segments, reveal.text, { loose: true });
     const range = ranges[reveal.occurrence] ?? ranges[0];
     if (range) {
-      editor.chain().focus().setTextSelection(range).scrollIntoView().run();
+      // Kursor PRZED trafieniem, a nie zaznaczenie całego fragmentu: widoczność
+      // daje dekoracja, a zaznaczenie znaczyłoby, że pierwszy wpisany znak
+      // kasuje znalezione słowo.
+      editor.chain().focus().setTextSelection(range.from).scrollIntoView().run();
       editor.view.dispatch(editor.state.tr.setMeta(searchRevealKey, range));
     }
 
-    const t = setTimeout(() => clearReveal(), REVEAL_MS);
-    return () => clearTimeout(t);
+    // Podświetlenie gaśnie przy pierwszym ruchu użytkownika — kliknięciu albo
+    // klawiszu. Wcześniej znikało po odliczeniu czasu, więc gasło w losowym
+    // momencie czytania; teraz trzyma się dokładnie tak długo, jak trzeba.
+    //
+    // Nasłuch wchodzi dopiero po najbliższej klatce, bo Enter wybierający wynik
+    // NADAL propaguje: React obsługuje go na swoim kontenerze, a mikrotaski
+    // (przełączenie pliku, render, ten efekt) wykonują się, zanim zdarzenie
+    // dojdzie do `document`. Bez opóźnienia ten sam Enter gasił podświetlenie
+    // w tej samej chwili, w której je zapalił.
+    const dismiss = () => clearReveal();
+    const frame = requestAnimationFrame(() => {
+      document.addEventListener("mousedown", dismiss);
+      document.addEventListener("keydown", dismiss);
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener("mousedown", dismiss);
+      document.removeEventListener("keydown", dismiss);
+    };
   }, [editor, reveal, clearReveal]);
 
   // Autozapis: 800 ms po ostatniej zmianie.

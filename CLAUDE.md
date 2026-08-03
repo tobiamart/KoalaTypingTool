@@ -75,7 +75,8 @@ Stare manifesty z `type` wczytują się dalej; pole znika przy pierwszym zapisie
   Settings, SearchPalette (paleta ⌘K / Ctrl+K — skrót łapany w fazie
   przechwytywania w `App.tsx`, żeby nie połknął go edytor; wybór wyniku ustawia
   `reveal` w store, a `FileEditor` przewija do wskazanego **wystąpienia**
-  i podświetla je na 2,6 s dekoracją `search-hl`)
+  i podświetla je dekoracją `search-hl` — do pierwszego kliknięcia albo
+  klawisza, nie na odliczony czas)
 - `styles.css` — ciemny minimalistyczny motyw (near-black z chłodnym, granatowym
   odcieniem, akcent arktyczny błękit — paleta marki, skojarzenie z narwalem
   i wodą pod lodem; ten sam błękit niesie logo `assets/narwhal.svg`, z którego
