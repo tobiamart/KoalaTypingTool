@@ -7,13 +7,12 @@
 // bez tego Ctrl+Z po przełączeniu pliku mógłby wstrzyknąć treść poprzedniego
 // pliku do bieżącego (i autozapis utrwaliłby to na dysku).
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useEditor, EditorContent, useEditorState } from "@tiptap/react";
 import type { Editor as TiptapEditor } from "@tiptap/react";
 import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import type { Node as PMNode } from "@tiptap/pm/model";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import CharacterCount from "@tiptap/extension-character-count";
@@ -21,7 +20,12 @@ import { Markdown } from "tiptap-markdown";
 import { useStore, findRef } from "../store/useStore";
 import { EditorToolbar } from "./EditorToolbar";
 import { findFragmentRanges, type TextSegment } from "../lib/highlight";
-import type { Issue } from "../lib/ai";
+import { issueKey } from "../lib/ai";
+import {
+  applyIssueDecorations,
+  decoratedKeys,
+  issueHighlightKey,
+} from "../lib/issueHighlight";
 
 /**
  * Pobiera Markdown z edytora. tiptap-markdown (pisany pod TipTap 2) nie dostarcza
@@ -38,39 +42,16 @@ function getMarkdown(editor: TiptapEditor): string {
 /* Podświetlanie błędów fact-checku                                     */
 /* ------------------------------------------------------------------ */
 
-const issueHighlightKey = new PluginKey<DecorationSet>("issueHighlight");
-
-/** Buduje dekoracje podświetleń z wyników weryfikacji. */
-function buildIssueDecorations(doc: PMNode, issues: Issue[]): DecorationSet {
-  // Zbierz węzły tekstowe dokumentu z ich pozycjami.
-  const segments: TextSegment[] = [];
-  doc.descendants((node, pos) => {
-    if (node.isText && node.text) segments.push({ text: node.text, pos });
-    return true;
-  });
-
-  const decorations: Decoration[] = [];
-  for (const issue of issues) {
-    for (const range of findFragmentRanges(segments, issue.fragment)) {
-      decorations.push(
-        Decoration.inline(range.from, range.to, {
-          class: "issue-hl issue-hl--" + issue.type,
-          "data-issue-type": issue.type,
-          "data-issue-desc": issue.description,
-          "data-issue-sugg": issue.suggestion,
-        }),
-      );
-    }
-  }
-  return DecorationSet.create(doc, decorations);
-}
-
 /**
- * Rozszerzenie podświetlające fragmenty zgłoszone przez fact-check.
+ * Rozszerzenie podświetlające fragmenty zgłoszone przez fact-check (logika
+ * dekoracji w `lib/issueHighlight.ts`).
  * Dekoracje ProseMirror NIE zmieniają dokumentu — podświetlenia nie brudzą
  * treści, historii undo ani autozapisu. Nowe wyniki wjeżdżają przez
  * tr.setMeta(issueHighlightKey, issues); przy zwykłej edycji istniejące
- * dekoracje są mapowane na nowe pozycje.
+ * dekoracje są mapowane na nowe pozycje, a te ruszone przez użytkownika gasną
+ * od razu — po przepisaniu zdania cytat modelu przestaje pasować do tekstu,
+ * więc podświetlenie wskazywałoby na coś, czego już nie ma. Zgłoszenie zostaje
+ * w panelu (przygaszone), bo sugestia przydaje się właśnie w trakcie poprawki.
  */
 const IssueHighlight = Extension.create({
   name: "issueHighlight",
@@ -80,11 +61,7 @@ const IssueHighlight = Extension.create({
         key: issueHighlightKey,
         state: {
           init: () => DecorationSet.empty,
-          apply(tr, old) {
-            const issues = tr.getMeta(issueHighlightKey) as Issue[] | undefined;
-            if (issues !== undefined) return buildIssueDecorations(tr.doc, issues);
-            return old.map(tr.mapping, tr.doc);
-          },
+          apply: applyIssueDecorations,
         },
         props: {
           decorations(state) {
@@ -144,6 +121,13 @@ interface IssueTip {
   type: string;
   desc: string;
   sugg: string;
+  /** Klucz zgłoszenia (`issueKey`) — po nim dymek wie, co zignorować. */
+  key: string;
+}
+
+/** Klucze zgłoszeń, które mają teraz podświetlenie w dokumencie. */
+function highlightedKeys(editor: TiptapEditor): Set<string> {
+  return decoratedKeys(issueHighlightKey.getState(editor.state));
 }
 
 /**
@@ -194,11 +178,20 @@ function FileEditor({ title }: { title: string }) {
   const updateContent = useStore((s) => s.updateContent);
   const saveActive = useStore((s) => s.saveActive);
   const issues = useStore((s) => s.issues);
+  const markIssuesEdited = useStore((s) => s.markIssuesEdited);
+  const ignoreIssue = useStore((s) => s.ignoreIssue);
   const reveal = useStore((s) => s.reveal);
   const clearReveal = useStore((s) => s.clearReveal);
 
   // Tooltip nad podświetlonym błędem (null = ukryty).
   const [tip, setTip] = useState<IssueTip | null>(null);
+  // Zgaszenie dymka jest opóźnione, żeby dało się przejechać myszą z tekstu
+  // na dymek (dzieli je kilka pikseli odstępu) i kliknąć w nim „Ignore".
+  const hideTip = useRef<number | null>(null);
+
+  // Klucze zgłoszeń, które miały podświetlenie po ostatnim przeliczeniu.
+  // Różnica po edycji mówi, które fragmenty ruszył użytkownik.
+  const highlighted = useRef<Set<string>>(new Set());
 
   // Treść pliku w chwili montowania — selectFile wczytał ją do store przed
   // przełączeniem, więc to zawsze aktualna zawartość z dysku.
@@ -231,6 +224,14 @@ function FileEditor({ title }: { title: string }) {
     content: initialContent,
     onUpdate: ({ editor }) => {
       updateContent(getMarkdown(editor));
+      // Podświetlenia, które zgasły przy tej zmianie — plugin zdjął je już
+      // z dokumentu, tu tylko dopisujemy to do zgłoszeń w panelu.
+      const now = highlightedKeys(editor);
+      const gone = [...highlighted.current].filter((k) => !now.has(k));
+      if (gone.length) {
+        highlighted.current = now;
+        markIssuesEdited(gone);
+      }
     },
   });
 
@@ -239,6 +240,7 @@ function FileEditor({ title }: { title: string }) {
   useEffect(() => {
     if (!editor) return;
     editor.view.dispatch(editor.state.tr.setMeta(issueHighlightKey, issues));
+    highlighted.current = highlightedKeys(editor);
     setTip(null);
   }, [editor, issues]);
 
@@ -314,31 +316,60 @@ function FileEditor({ title }: { title: string }) {
   const chars = counts?.chars ?? 0;
 
   // Szerokość dymka z CSS (.issue-tip max-width) — potrzebna, by nie wyszedł
-  // poza prawą krawędź okna.
+  // poza prawą krawędź okna. Wysokość jest przybliżona i służy tylko decyzji,
+  // czy dymek zmieści się pod fragmentem, czy ma iść nad niego.
   const TIP_WIDTH = 340;
   const TIP_MARGIN = 12;
+  const TIP_HEIGHT = 150;
+  // Czas na przejechanie myszą przez odstęp między tekstem a dymkiem.
+  const TIP_HIDE_DELAY = 160;
+
+  function cancelHide() {
+    if (hideTip.current !== null) {
+      clearTimeout(hideTip.current);
+      hideTip.current = null;
+    }
+  }
+  function scheduleHide() {
+    cancelHide();
+    hideTip.current = window.setTimeout(() => setTip(null), TIP_HIDE_DELAY);
+  }
 
   // Tooltip przez delegację zdarzeń — dekoracje to zwykłe spany w DOM.
   function onMouseOver(e: React.MouseEvent) {
     const el = (e.target as HTMLElement).closest(".issue-hl");
     if (!(el instanceof HTMLElement)) return;
+    cancelHide();
     const rect = el.getBoundingClientRect();
     // Przy prawej krawędzi dosuwamy dymek do środka okna zamiast go uciąć,
     // a gdy brakuje miejsca pod fragmentem — pokazujemy go nad nim.
     const x = Math.min(rect.left, window.innerWidth - TIP_WIDTH - TIP_MARGIN);
     const below = rect.bottom + 6;
-    const fitsBelow = below + 120 < window.innerHeight;
+    const fitsBelow = below + TIP_HEIGHT < window.innerHeight;
     setTip({
       x: Math.max(TIP_MARGIN, x),
-      y: fitsBelow ? below : Math.max(TIP_MARGIN, rect.top - 6 - 120),
+      y: fitsBelow ? below : Math.max(TIP_MARGIN, rect.top - 6 - TIP_HEIGHT),
       type: el.dataset.issueType ?? "",
       desc: el.dataset.issueDesc ?? "",
       sugg: el.dataset.issueSugg ?? "",
+      key: el.dataset.issueKey ?? "",
     });
   }
   function onMouseOut(e: React.MouseEvent) {
-    if ((e.target as HTMLElement).closest(".issue-hl")) setTip(null);
+    if ((e.target as HTMLElement).closest(".issue-hl")) scheduleHide();
   }
+
+  // „Ignore" prosto z dymka — ta sama akcja co na karcie w panelu, tylko bez
+  // szukania zgłoszenia wzrokiem na liście.
+  function ignoreFromTip(key: string) {
+    const issue = issues.find((i) => issueKey(i) === key);
+    cancelHide();
+    setTip(null);
+    if (issue) void ignoreIssue(issue);
+  }
+
+  // Odmontowanie w trakcie odliczania zostawiłoby timer wołający setState.
+  useEffect(() => cancelHide, []);
 
   return (
     <div className={"editor editor--font-" + editorFont}>
@@ -356,8 +387,24 @@ function FileEditor({ title }: { title: string }) {
         <EditorContent editor={editor} className="editor__content" />
       </div>
       {tip && (
-        <div className="issue-tip" style={{ left: tip.x, top: tip.y }}>
-          <div className={"issue-tip__type issue-tip__type--" + tip.type}>{tip.type}</div>
+        // Dymek jest najeżdżalny (nie znika, gdy mysz zejdzie na niego z tekstu)
+        // — inaczej nie dałoby się kliknąć w nim „Ignore".
+        <div
+          className="issue-tip"
+          style={{ left: tip.x, top: tip.y }}
+          onMouseEnter={cancelHide}
+          onMouseLeave={scheduleHide}
+        >
+          <div className="issue-tip__head">
+            <div className={"issue-tip__type issue-tip__type--" + tip.type}>{tip.type}</div>
+            <button
+              className="issue__ignore"
+              title="Ignore this issue (won't be reported again)"
+              onClick={() => ignoreFromTip(tip.key)}
+            >
+              Ignore
+            </button>
+          </div>
           <div className="issue-tip__desc">{tip.desc}</div>
           {tip.sugg && <div className="issue-tip__sugg">💡 {tip.sugg}</div>}
         </div>

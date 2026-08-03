@@ -10,7 +10,7 @@ import type {
   OpenProject,
   RecentProject,
 } from "../types";
-import type { Issue } from "../lib/ai";
+import { issueKey, type Issue, type TrackedIssue } from "../lib/ai";
 import * as storage from "../lib/storage";
 
 const RECENT_KEY = "narwhal.recentProjects";
@@ -61,7 +61,11 @@ interface AppState {
   verifyOpen: boolean;
   /** Wyniki ostatniej weryfikacji aktywnego pliku — źródło podświetleń
    *  w edytorze i kart w panelu. Czyszczone przy zmianie pliku. */
-  issues: Issue[];
+  issues: TrackedIssue[];
+  /** Ignorowane błędy całego projektu (`ignored-issues.json`). Trzymane w store,
+   *  bo „Ignore" klika się w dwóch miejscach — na karcie w panelu i w dymku nad
+   *  fragmentem — a licznik na dole panelu musi zgadzać się z oboma. */
+  ignored: storage.IgnoredIssue[];
   /** Wybrany krój czcionki obszaru pisania. */
   editorFont: FontChoice;
   /** Czy okno ustawień jest otwarte. */
@@ -92,8 +96,14 @@ interface AppState {
   setIssues: (issues: Issue[]) => void;
   /** Dokłada pojedynczy błąd (strumieniowe wyniki weryfikacji). */
   addIssue: (issue: Issue) => void;
+  /** Oznacza zgłoszenia (klucze z `issueKey`) jako dotknięte edycją. */
+  markIssuesEdited: (keys: string[]) => void;
   /** Dodaje błąd do ignorowanych (plik ignored-issues.json) i chowa go z wyników. */
-  ignoreIssue: (issue: Issue) => Promise<void>;
+  ignoreIssue: (issue: Pick<Issue, "type" | "fragment">) => Promise<void>;
+  /** Wczytuje listę ignorowanych błędów projektu z dysku. */
+  loadIgnored: () => Promise<void>;
+  /** Zdejmuje wpis z listy ignorowanych (błąd wróci przy następnym sprawdzeniu). */
+  restoreIgnored: (entry: storage.IgnoredIssue) => Promise<void>;
   setEditorFont: (font: FontChoice) => void;
   toggleSettings: () => void;
   setSearchOpen: (open: boolean) => void;
@@ -124,6 +134,7 @@ export const useStore = create<AppState>((set, get) => ({
   recent: loadRecent(),
   verifyOpen: false,
   issues: [],
+  ignored: [],
   editorFont: loadFont(),
   settingsOpen: false,
   searchOpen: false,
@@ -142,6 +153,7 @@ export const useStore = create<AppState>((set, get) => ({
         content: "",
         dirty: false,
         issues: [],
+        ignored: [],
         loading: false,
       });
     } catch (e) {
@@ -177,6 +189,7 @@ export const useStore = create<AppState>((set, get) => ({
         content,
         dirty: false,
         issues: [],
+        ignored: [],
         loading: false,
       });
     } catch (e) {
@@ -191,7 +204,7 @@ export const useStore = create<AppState>((set, get) => ({
       const ok = await get().saveActive();
       if (!ok) return;
     }
-    set({ project: null, active: null, content: "", dirty: false, issues: [] });
+    set({ project: null, active: null, content: "", dirty: false, issues: [], ignored: [] });
   },
 
   selectFile: async (kind, id) => {
@@ -325,22 +338,52 @@ export const useStore = create<AppState>((set, get) => ({
 
   addIssue: (issue) => set((s) => ({ issues: [...s.issues, issue] })),
 
+  markIssuesEdited: (keys) =>
+    set((s) => {
+      // Nie ruszaj tablicy, gdy nic się nie zmienia — inaczej każde naciśnięcie
+      // klawisza przerysowywałoby panel i (przez useEffect na `issues`)
+      // przebudowywało wszystkie podświetlenia.
+      if (!keys.some((k) => s.issues.some((i) => !i.edited && issueKey(i) === k))) return s;
+      return {
+        issues: s.issues.map((i) => (keys.includes(issueKey(i)) ? { ...i, edited: true } : i)),
+      };
+    }),
+
   ignoreIssue: async (issue) => {
     const { project, active } = get();
     const ref = findRef(project, active);
     if (!project || !ref) return;
     try {
-      await storage.addIgnoredIssue(project, {
+      const ignored = await storage.addIgnoredIssue(project, {
         file: ref.file,
         type: issue.type,
         fragment: issue.fragment,
       });
       // Schowaj wszystkie zgłoszenia o tym samym typie i cytacie.
       set((s) => ({
+        ignored,
         issues: s.issues.filter(
           (i) => !(i.type === issue.type && i.fragment === issue.fragment),
         ),
       }));
+    } catch (e) {
+      set({ error: String(e) });
+    }
+  },
+
+  loadIgnored: async () => {
+    const { project } = get();
+    if (!project) return;
+    const ignored = await storage.loadIgnoredIssues(project);
+    // Projekt mógł się w tym czasie zmienić — nie wstawiaj listy z poprzedniego.
+    if (get().project?.path === project.path) set({ ignored });
+  },
+
+  restoreIgnored: async (entry) => {
+    const { project } = get();
+    if (!project) return;
+    try {
+      set({ ignored: await storage.removeIgnoredIssue(project, entry) });
     } catch (e) {
       set({ error: String(e) });
     }

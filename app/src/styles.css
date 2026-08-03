@@ -458,7 +458,18 @@ button { font-family: inherit; cursor: pointer; color: inherit; }
 .issue--grammar { border-left-color: var(--grammar); }
 .issue--consistency { border-left-color: var(--consistency); }
 .issue--logic { border-left-color: var(--logic); }
+/* Fragment ruszony po sprawdzeniu: podświetlenie w tekście już zgasło, więc
+   karta też schodzi na drugi plan — ale zostaje czytelna, bo po sugestię sięga
+   się właśnie w trakcie poprawiania. Musi stać PO regułach kategorii, żeby
+   przygasić lewy pasek. Przezroczystość 0,75 to najniższa, przy której wszystkie
+   kolory karty trzymają jeszcze WCAG AA na --surface: --muted 4,64:1,
+   --accent 4,65:1, --text 8,0:1. Niżej --muted i --accent wpadają poniżej 4,5:1. */
+.issue--edited { opacity: 0.75; border-left-color: var(--border-strong); }
 .issue__head { display: flex; align-items: center; justify-content: space-between; }
+.issue__edited {
+  margin-left: 0.4rem; padding: 0 0.28rem; border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs); color: var(--muted); font-size: 0.62rem;
+}
 .issue__ignore {
   background: transparent; border: 1px solid var(--border); color: var(--faint);
   font-size: 0.65rem; padding: 0.1rem 0.45rem; border-radius: var(--radius-sm);
@@ -500,13 +511,16 @@ button { font-family: inherit; cursor: pointer; color: inherit; }
   box-shadow: 0 0 0 1px var(--accent-line);
 }
 
-/* Tooltip nad podświetleniem. */
+/* Tooltip nad podświetleniem. Świadomie BEZ `pointer-events: none` — mieści
+   przycisk „Ignore", więc mysz musi móc na niego zjechać z tekstu (zgaszenie
+   dymka jest w Editor.tsx opóźnione o tyle, ile trwa przejechanie odstępu). */
 .issue-tip {
   position: fixed; z-index: 50; max-width: 340px;
   background: var(--panel); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 0.55rem 0.7rem; font-size: 0.8rem;
-  box-shadow: var(--shadow-float); pointer-events: none; line-height: 1.45;
+  box-shadow: var(--shadow-float); line-height: 1.45;
 }
+.issue-tip__head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; }
 .issue-tip__type { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; margin-bottom: 0.25rem; }
 .issue-tip__type--grammar { color: var(--grammar); }
 .issue-tip__type--consistency { color: var(--consistency); }

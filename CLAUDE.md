@@ -54,13 +54,30 @@ Stare manifesty z `type` wczytują się dalej; pole znika przy pierwszym zapisie
   ignorowane błędy fact-checku w `ignored-issues.json` w folderze projektu
   (klucz: plik + typ + cytat)
 - `lib/highlight.ts` — mapowanie cytatów z fact-checku na zakresy dokumentu
-  (czysta logika, testy w `highlight.test.ts`); Editor podświetla je dekoracjami
-  ProseMirror (nie zmieniają dokumentu → nie brudzą undo/autozapisu), tooltip
-  po najechaniu; wyniki weryfikacji żyją w store (`issues`), przycisk „Ignore"
-  na karcie błędu dopisuje wpis do ignorowanych; rozwijany podgląd „Ignored
-  issues" na dole panelu (cały projekt) z przyciskiem „Restore"
+  (czysta logika, testy w `highlight.test.ts`)
+- `lib/issueHighlight.ts` — dekoracje ProseMirror z tych zakresów (nie zmieniają
+  dokumentu → nie brudzą undo/autozapisu); plugin wpina `Editor.tsx`, a logika
+  siedzi osobno, bo testuje się ją na samym `EditorState`, bez DOM-u
+  (`issueHighlight.test.ts`). **Edycja fragmentu gasi jego podświetlenie
+  natychmiast** — cytat modelu przestaje wtedy opisywać tekst, który jest
+  w dokumencie. Rozpoznanie idzie po zakresach zmienionych przez transakcję
+  (krańce włącznie, więc dopisanie litery na styku też się liczy), a nie przez
+  przeliczanie cytatów od nowa: to ostatnie znaczyłoby skanowanie całego
+  rozdziału przy **każdym naciśnięciu klawisza**. Zgaszone zgłoszenie dostaje
+  w store flagę `edited` (karta w panelu przygaszona, ale sugestia zostaje —
+  sięga się po nią właśnie w trakcie poprawiania) i nie wraca do dokumentu
+  przy kolejnym przeliczeniu. Skutek uboczny: cofnięcie edycji (Ctrl+Z) nie
+  przywraca podświetlenia — wraca dopiero po ponownym „Check text"
+- wyniki weryfikacji żyją w store (`issues`), ignorowane też (`ignored`) — bo
+  „Ignore" klika się w dwóch miejscach: na karcie w panelu i w dymku nad
+  fragmentem w tekście (dymek jest z tego powodu najeżdżalny, bez
+  `pointer-events: none`, a jego zgaszenie ma opóźnienie na przejechanie myszą
+  z tekstu). Rozwijany podgląd „Ignored issues" na dole panelu (cały projekt)
+  z przyciskiem „Restore"
 - `lib/ai.ts` — `verifyText()` woła serwer proxy (`POST /verify`) z timeoutem
-  i rozróżnianiem błędów. IssueType = `"grammar" | "consistency" | "logic"`
+  i rozróżnianiem błędów. IssueType = `"grammar" | "consistency" | "logic"`;
+  `issueKey()` to tożsamość zgłoszenia (kategoria + cytat) używana przez
+  dekoracje i listę ignorowanych
 - `lib/search.ts` — wyszukiwarka projektu (czysta logika, testy w `search.test.ts`):
   `fold()` sprowadza tekst do postaci porównawczej **znak w znak** (małe litery
   bez ogonków), więc „zolw" znajduje „ŻÓŁW", a pozycje trafień dalej pasują

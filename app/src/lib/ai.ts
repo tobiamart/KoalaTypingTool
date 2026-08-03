@@ -23,6 +23,21 @@ export interface Issue {
   suggestion: string;
 }
 
+/** Błąd z weryfikacji wraz ze stanem sesji.
+ *  `edited` = użytkownik ruszył cytowany fragment w edytorze, więc zgłoszenie
+ *  opisuje tekst, którego już nie ma. Podświetlenie znika od razu, a karta
+ *  w panelu zostaje przygaszona — sugestia jest wtedy najbardziej potrzebna. */
+export interface TrackedIssue extends Issue {
+  edited?: boolean;
+}
+
+/** Tożsamość zgłoszenia w obrębie pliku: kategoria + cytat. Tego samego klucza
+ *  używa lista ignorowanych (`ignored-issues.json`), więc dwa identyczne
+ *  zgłoszenia znikają razem — celowo, bo opisują to samo miejsce. */
+export function issueKey(issue: Pick<Issue, "type" | "fragment">): string {
+  return issue.type + "|" + issue.fragment;
+}
+
 /** Zużycie tokenów pojedynczej weryfikacji (zwracane przez serwer w trybie live). */
 export interface VerifyUsage {
   /** Tokeny wejścia pełnopłatne (poza cache). */

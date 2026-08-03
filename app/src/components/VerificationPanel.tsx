@@ -31,6 +31,11 @@ export function VerificationPanel() {
   const setIssues = useStore((s) => s.setIssues);
   const addIssue = useStore((s) => s.addIssue);
   const ignoreIssue = useStore((s) => s.ignoreIssue);
+  // Lista ignorowanych żyje w store, bo „Ignore" klika się też w dymku nad
+  // fragmentem w edytorze — licznik poniżej musi to zobaczyć.
+  const ignoredList = useStore((s) => s.ignored);
+  const loadIgnored = useStore((s) => s.loadIgnored);
+  const restoreIgnored = useStore((s) => s.restoreIgnored);
 
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +45,6 @@ export function VerificationPanel() {
   const [usage, setUsage] = useState<VerifyUsage | null>(null);
   // Podgląd ignorowanych błędów (cały projekt) — rozwijany na dole panelu.
   const [ignoredOpen, setIgnoredOpen] = useState(false);
-  const [ignoredList, setIgnoredList] = useState<storage.IgnoredIssue[]>([]);
 
   // Przełączenie pliku musi wyczyścić CAŁE podsumowanie, nie tylko listę błędów
   // (tę czyści store). Bez tego po zmianie rozdziału zostawało „No issues found"
@@ -52,28 +56,11 @@ export function VerificationPanel() {
     setMockMode(false);
   }, [active?.kind, active?.id]);
 
-  // Wczytaj listę przy otwarciu projektu (licznik na przycisku) i odświeżaj
-  // po każdym Ignore/Restore.
+  // Wczytaj listę przy otwarciu projektu (licznik na przycisku); Ignore
+  // i Restore aktualizują ją same w store.
   useEffect(() => {
-    if (!project) return;
-    let cancelled = false;
-    void storage.loadIgnoredIssues(project).then((list) => {
-      if (!cancelled) setIgnoredList(list);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [project]);
-
-  async function refreshIgnored() {
-    if (!project) return;
-    setIgnoredList(await storage.loadIgnoredIssues(project));
-  }
-
-  async function restoreIgnored(entry: storage.IgnoredIssue) {
-    if (!project) return;
-    setIgnoredList(await storage.removeIgnoredIssue(project, entry));
-  }
+    void loadIgnored();
+  }, [project, loadIgnored]);
 
   const activeRef = findRef(project, active);
   const canCheck = !!activeRef && status !== "checking";
@@ -177,13 +164,21 @@ export function VerificationPanel() {
           issues.map((issue, i) => {
             const meta = TYPE_META[issue.type];
             return (
-              <div key={i} className={"issue " + meta.className}>
+              <div
+                key={i}
+                className={"issue " + meta.className + (issue.edited ? " issue--edited" : "")}
+              >
                 <div className="issue__head">
-                  <div className="issue__type">{meta.label}</div>
+                  <div className="issue__type">
+                    {meta.label}
+                    {/* Fragment został zmieniony po sprawdzeniu — uwaga może już
+                        nie być aktualna, ale sugestia zostaje pod ręką. */}
+                    {issue.edited && <span className="issue__edited">edited</span>}
+                  </div>
                   <button
                     className="issue__ignore"
                     title="Ignore this issue (won't be reported again)"
-                    onClick={() => void ignoreIssue(issue).then(refreshIgnored)}
+                    onClick={() => void ignoreIssue(issue)}
                   >
                     Ignore
                   </button>
