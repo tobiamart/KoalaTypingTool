@@ -1,54 +1,59 @@
 /* ===================================================================
    Narwhal — ciemny, minimalistyczny motyw.
-   Tło: near-black z subtelnym eukaliptusowym odcieniem (nie czysta czerń).
-   Akcent: przygaszona szałwiowo-eukaliptusowa zieleń, używana oszczędnie.
+   Tło: near-black z chłodnym, granatowym odcieniem (nie czysta czerń) —
+   głębina, w której żyje narwal.
+   Akcent: przygaszony lodowo-arktyczny błękit, używany oszczędnie.
    Chrome (panele) w sans; obszar pisania w serif (charakter literacki).
    =================================================================== */
 
 :root {
   /* Tła — od najciemniejszego (sidebar) do wyniesionego */
-  --bg: #0f1211;
-  --sidebar-bg: #0a0c0b;
-  --surface: #191d1b;
-  --elevated: #232825;
+  --bg: #0f1216;
+  --sidebar-bg: #0a0c10;
+  --surface: #171c23;
+  --elevated: #212934;
 
   /* Powierzchnia elementów pływających (tooltip) — ciemniejsza niż --elevated,
      żeby odcinała się od panelu, nad którym wisi. */
-  --panel: #1b1f1d;
+  --panel: #191f27;
 
   /* Obrysy i tekst */
   --border: rgba(255, 255, 255, 0.06);
   --border-strong: rgba(255, 255, 255, 0.11);
-  --text: #e7e9e4;
+  --text: #e4e8ee;
   /* Średni poziom tekstu (opisy, etykiety, nieaktywne pozycje list). Rozjaśniony
      razem z --faint: trzy poziomy mają trzymać wyraźny odstęp kontrastu, inaczej
-     hierarchia przestaje działać. Dziś: 15,4:1 → 7,8:1 → 5,3:1 na --bg. */
-  --muted: #a1a9a0;
+     hierarchia przestaje działać. Dziś: 15,3:1 → 7,9:1 → 5,4:1 na --bg. */
+  --muted: #9fa9b6;
   /* Najsłabszy poziom tekstu. WCAG AA wymaga 4,5:1 dla drobnego pisma, a --faint
      opisuje właśnie takie: liczniki, ścieżki plików, nagłówki sekcji, placeholdery.
-     Poprzednia wartość (#565c55) dawała 2,74:1 na --bg i 2,48:1 na --surface —
-     poniżej progu nawet dla dużego tekstu. Ta daje 5,27:1 na --bg i 4,77:1
-     na --surface. Nie obniżać bez policzenia kontrastu. */
-  --faint: #818a80;
+     Historyczna wartość (#565c55) dawała 2,74:1 na --bg — poniżej progu nawet
+     dla dużego tekstu. Ta daje 5,36:1 na --bg i 4,89:1 na --surface.
+     Nie obniżać bez policzenia kontrastu. */
+  --faint: #7f8a99;
   /* Tekst obszaru pisania — o ton stonowany względem --text, żeby długie
      czytanie mniej męczyło (13,9:1 na --bg, więc daleko powyżej progu). */
-  --text-read: #dcded8;
+  --text-read: #d9dee6;
 
-  /* Akcent eukaliptusowy */
-  --accent: #83b89e;
-  --accent-hover: #97c9b0;
-  --accent-dim: rgba(131, 184, 158, 0.14);
-  --accent-line: rgba(131, 184, 158, 0.4);
-  /* Tekst na wypełnionym akcencie (przycisk primary) — 8,6:1 na --accent. */
-  --on-accent: #0c0f0d;
+  /* Akcent — arktyczny błękit (skojarzenie z narwalem i wodą pod lodem) */
+  --accent: #6fb0da;
+  --accent-hover: #8cc4e8;
+  --accent-dim: rgba(111, 176, 218, 0.14);
+  --accent-line: rgba(111, 176, 218, 0.4);
+  /* Tekst na wypełnionym akcencie (przycisk primary) — 8,1:1 na --accent. */
+  --on-accent: #08111a;
 
-  /* Kategorie fact-checku i błędy */
-  --danger: #d68b7c;
-  --danger-dim: rgba(214, 139, 124, 0.1);
-  --danger-line: rgba(214, 139, 124, 0.3);
-  --grammar: #7aa2c7;
-  --consistency: #ab8fca;
-  --logic: #cbab76;
+  /* Kategorie fact-checku i błędy. Żadna z nich nie może wpaść w błękit
+     akcentu: podświetlenie wyszukiwarki (--accent-dim/--accent-line) stoi
+     w tekście obok podkreśleń błędów, więc wspólny odcień znaczyłby, że
+     trafienie wyszukiwania czyta się jak błąd. Dlatego gramatyka przejęła
+     dawny akcent (morska zieleń), a nie sąsiedni błękit. */
+  --danger: #e08a7d;
+  --danger-dim: rgba(224, 138, 125, 0.1);
+  --danger-line: rgba(224, 138, 125, 0.3);
+  --grammar: #86c9ae;
+  --consistency: #b08fd6;
+  --logic: #d6b071;
 
   /* Przyciemnienie tła pod modalem i cień elementów pływających */
   --overlay: rgba(0, 0, 0, 0.55);

@@ -76,8 +76,14 @@ Stare manifesty z `type` wczytują się dalej; pole znika przy pierwszym zapisie
   przechwytywania w `App.tsx`, żeby nie połknął go edytor; wybór wyniku ustawia
   `reveal` w store, a `FileEditor` przewija do wskazanego **wystąpienia**
   i podświetla je na 2,6 s dekoracją `search-hl`)
-- `styles.css` — ciemny minimalistyczny motyw (near-black z eukaliptusowym odcieniem,
-  akcent szałwiowa zieleń). **Wszystkie kolory, promienie i cienie pochodzą
+- `styles.css` — ciemny minimalistyczny motyw (near-black z chłodnym, granatowym
+  odcieniem, akcent arktyczny błękit — paleta marki, skojarzenie z narwalem
+  i wodą pod lodem; ten sam błękit niesie logo `assets/narwhal.svg`, z którego
+  generowane są ikony aplikacji). Kategorie fact-checku muszą trzymać się
+  z dala od błękitu akcentu: podświetlenie wyszukiwarki stoi w tekście obok
+  podkreśleń błędów, więc wspólny odcień znaczyłby, że trafienie wyszukiwania
+  czyta się jak błąd — dlatego gramatyka dostała morską zieleń, nie sąsiedni
+  błękit. **Wszystkie kolory, promienie i cienie pochodzą
   z tokenów w `:root`** — nie wpisywać wartości na miejscu, bo wtedy motyw
   przestaje być jednym źródłem prawdy. Promienie mają skalę `--radius-xs|sm|
   (bazowy)|lg`. Każdy kolor tekstu musi trzymać próg **WCAG AA 4,5:1** na tle,
