@@ -14,6 +14,8 @@ is stored as plain **Markdown files on disk** — you own your data, no lock-in.
 - `app/src-tauri` — Tauri (Rust) shell: window, plugins, permissions
 - `server/` — AI proxy (Cloudflare Worker + Hono); holds the API key,
   the desktop app never sees it. Runs locally via `wrangler dev`
+- `web/` — the narwhal.ink landing page: one static HTML file served by its
+  own Cloudflare Worker, no build step
 - Each writing project is a folder with `project.json`, `chapters/*.md`, `notes/*.md`
 
 ## Development

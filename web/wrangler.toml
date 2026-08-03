@@ -1,0 +1,36 @@
+# Konfiguracja Cloudflare Workera serwującego stronę narwhal.ink.
+# Sama statyka — brak pola `main`, więc nie ma kodu Workera ani builda:
+# katalog `public/` idzie na krawędź tak, jak leży.
+#
+# Podgląd lokalny: `npm run dev`  (wrangler dev, http://localhost:8788)
+# Publikacja:      `npm run deploy`
+#
+# Uwaga: to osobny Worker od `server/` (proxy AI na api.narwhal.ink).
+# Dwie usługi na jednej domenie, celowo rozdzielone — strona nie ma
+# powodu dzielić limitów ani sekretów z endpointem /verify.
+
+name = "narwhal-site"
+compatibility_date = "2026-07-01"
+
+# Ruch statyczny na Workers jest nielimitowany i nie liczy się do limitu
+# żądań, więc strona nie rusza rachunku ani budżetu CPU proxy.
+[assets]
+directory = "./public"
+
+# Korzeń domeny i www. `custom_domain = true` sprawia, że wrangler sam
+# zakłada rekord DNS i zamawia certyfikat przy pierwszym wdrożeniu.
+#
+# PUŁAPKA: jeśli w strefie wiszą już rekordy A dla narwhal.ink i www
+# (a wiszą — wskazują na Cloudflare i nie mają origin, więc żądanie
+# timeoutuje), wrangler zgłosi konflikt. Usuń je w panelu Cloudflare
+# przed pierwszym `npm run deploy`.
+routes = [
+  { pattern = "narwhal.ink", custom_domain = true },
+  { pattern = "www.narwhal.ink", custom_domain = true },
+]
+
+# Świadomie bez adresu *.workers.dev — tak samo jak w server/wrangler.toml.
+workers_dev = false
+
+[observability]
+enabled = true

@@ -1,0 +1,920 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Narwhal — fact-checking writing tool</title>
+<meta name="description" content="Narwhal reads your whole manuscript and the notes beside it, then underlines the sentence that contradicts them. A desktop writing tool for long-form, chaptered text.">
+<link rel="canonical" href="https://narwhal.ink/">
+<link rel="icon" href="/narwhal.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0f1216">
+<meta name="color-scheme" content="dark">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Narwhal">
+<meta property="og:url" content="https://narwhal.ink/">
+<meta property="og:title" content="Narwhal — fact-checking writing tool">
+<meta property="og:description" content="It won’t write your book. It will remember it.">
+<meta property="og:image" content="https://narwhal.ink/og.png">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Narwhal — fact-checking writing tool">
+<meta name="twitter:description" content="It won’t write your book. It will remember it.">
+<meta name="twitter:image" content="https://narwhal.ink/og.png">
+
+<style>
+  /* ===================================================================
+     Narwhal — strona narwhal.ink.
+     Wszystkie kolory, promienie i czcionki pochodzą z tokenów aplikacji
+     (app/src/styles.css). Nic nie jest wpisane na miejscu — motyw ma
+     zostać jednym źródłem prawdy po obu stronach.
+     Motyw wyłącznie ciemny: aplikacja jest ciemna, więc strona też.
+     =================================================================== */
+
+  :root {
+    /* Tła */
+    --bg: #0f1216;
+    --sidebar-bg: #0a0c10;
+    --surface: #171c23;
+    --elevated: #212934;
+    --panel: #191f27;
+
+    /* Obrysy i tekst */
+    --border: rgba(255, 255, 255, 0.06);
+    --border-strong: rgba(255, 255, 255, 0.11);
+    --text: #e4e8ee;
+    --muted: #9fa9b6;
+    --faint: #7f8a99;
+    --text-read: #d9dee6;
+
+    /* Akcent — arktyczny błękit */
+    --accent: #6fb0da;
+    --accent-hover: #8cc4e8;
+    --accent-dim: rgba(111, 176, 218, 0.14);
+    --accent-line: rgba(111, 176, 218, 0.4);
+    --on-accent: #08111a;
+
+    /* Kategorie fact-checku */
+    --grammar: #86c9ae;
+    --consistency: #b08fd6;
+    --logic: #d6b071;
+
+    --shadow-float: 0 6px 24px rgba(0, 0, 0, 0.45);
+
+    --font-ui: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+    --font-mono: ui-monospace, "Cascadia Code", "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
+
+    --radius-xs: 2px;
+    --radius-sm: 4px;
+    --radius: 7px;
+    --radius-lg: 10px;
+
+    /* Rytm pionowy — jedna skala, żeby sekcje nie walczyły o marginesy */
+    --gap-s: 12px;
+    --gap-m: 22px;
+    --gap-l: 40px;
+    --gap-xl: 92px;
+
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  a { color: inherit; }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-xs);
+  }
+
+  .skip {
+    position: absolute;
+    left: -9999px;
+    top: 8px;
+    background: var(--elevated);
+    color: var(--text);
+    padding: 8px 14px;
+    border-radius: var(--radius);
+    z-index: 50;
+    text-decoration: none;
+  }
+  .skip:focus { left: 12px; }
+
+  .wrap {
+    width: 100%;
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* ---- Etykiety mono: jedyny nośnik metadanych ---- */
+  .label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+
+  /* ---- Nawigacja ---- */
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.3s ease, background 0.3s ease;
+  }
+  .nav.is-stuck { border-bottom-color: var(--border); }
+
+  .nav__inner {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-m);
+    height: 62px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+    margin-right: auto;
+  }
+  .brand__mark { display: block; width: 30px; height: 30px; }
+  .brand__name {
+    font-family: var(--font-serif);
+    font-size: 19px;
+    letter-spacing: 0.01em;
+  }
+
+  .nav__links {
+    display: flex;
+    align-items: center;
+    gap: 26px;
+  }
+  .nav__link {
+    font-size: 14px;
+    color: var(--muted);
+    text-decoration: none;
+    transition: color 0.2s ease;
+  }
+  .nav__link:hover { color: var(--text); }
+
+  /* ---- Przyciski ---- */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-ui);
+    font-size: 14px;
+    padding: 9px 16px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    color: var(--text);
+    text-decoration: none;
+    cursor: pointer;
+    transition: border-color 0.2s ease, background 0.2s ease,
+                transform 0.2s cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+  .btn:hover {
+    border-color: var(--accent-line);
+    background: var(--elevated);
+    transform: translateY(-1px);
+  }
+  .btn--primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--on-accent);
+    font-weight: 550;
+  }
+  .btn--primary:hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+
+  /* ---- Sekcje ---- */
+  .section { padding-block: var(--gap-xl); }
+  .section--hero { padding-top: 58px; padding-bottom: var(--gap-xl); }
+  .section--rule { border-top: 1px solid var(--border); }
+
+  .section__head {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-s);
+    max-width: 620px;
+    margin-bottom: var(--gap-l);
+  }
+
+  h1, h2, h3 { margin: 0; text-wrap: balance; }
+
+  .h-display {
+    font-family: var(--font-serif);
+    font-weight: 400;
+    font-size: clamp(2.15rem, 5.1vw, 3.85rem);
+    line-height: 1.04;
+    letter-spacing: -0.022em;
+    color: var(--text);
+  }
+  .h-section {
+    font-family: var(--font-serif);
+    font-weight: 400;
+    font-size: clamp(1.55rem, 3vw, 2.15rem);
+    line-height: 1.15;
+    letter-spacing: -0.015em;
+  }
+
+  .lede {
+    font-family: var(--font-serif);
+    font-size: clamp(1.02rem, 1.5vw, 1.16rem);
+    line-height: 1.62;
+    color: var(--muted);
+    max-width: 34em;
+    margin: 0;
+  }
+  .body-text {
+    font-size: 15px;
+    line-height: 1.65;
+    color: var(--muted);
+    margin: 0;
+  }
+  .body-text code {
+    font-family: var(--font-mono);
+    font-size: 0.88em;
+    color: var(--text-read);
+    background: var(--elevated);
+    border-radius: var(--radius-sm);
+    padding: 1px 5px;
+  }
+
+  /* ---- Hero ---- */
+  .hero__intro {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    max-width: 780px;
+    margin-bottom: 52px;
+  }
+  .hero__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px;
+    margin-top: 6px;
+  }
+  .hero__note {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--faint);
+    letter-spacing: 0.03em;
+  }
+
+  /* Poświata pod hero — woda pod lodem, celowo ledwo widoczna */
+  .glow {
+    position: absolute;
+    inset: -180px 0 auto 0;
+    height: 520px;
+    background: radial-gradient(
+      58% 60% at 50% 0%,
+      rgba(111, 176, 218, 0.09),
+      rgba(111, 176, 218, 0) 68%
+    );
+    pointer-events: none;
+    z-index: 0;
+  }
+  .hero-shell { position: relative; }
+  .hero-shell > .wrap { position: relative; z-index: 1; }
+
+  /* ---- Demo: dwa panele, jak w aplikacji ---- */
+  .demo {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 336px;
+    gap: 20px;
+    align-items: start;
+  }
+
+  .pane {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-float);
+    overflow: hidden;
+  }
+
+  .pane__bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--sidebar-bg);
+  }
+  .pane__title {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .pane__meta {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ms {
+    font-family: var(--font-serif);
+    font-size: clamp(1.04rem, 1.55vw, 1.3rem);
+    line-height: 1.82;
+    color: var(--text-read);
+    margin: 0;
+    padding: 30px 34px 34px;
+  }
+
+  /* Podkreślenie rysuje się od lewej; box-decoration-break utrzymuje je
+     na każdym fragmencie, gdy fraza łamie się między wiersze. */
+  .mk {
+    --cat: var(--accent);
+    background-color: transparent;
+    background-image: linear-gradient(var(--cat), var(--cat));
+    background-repeat: no-repeat;
+    background-position: 0 100%;
+    background-size: 0% 2px;
+    padding-bottom: 0.14em;
+    border-radius: var(--radius-xs);
+    color: inherit;
+    transition: background-size 0.55s cubic-bezier(0.22, 0.61, 0.36, 1),
+                background-color 0.22s ease;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+  .mk.is-marked { background-size: 100% 2px; }
+  .mk.is-marked:hover,
+  .mk.is-marked:focus-visible,
+  .mk.is-linked {
+    background-color: color-mix(in srgb, var(--cat) 15%, transparent);
+  }
+  .mk--grammar { --cat: var(--grammar); }
+  .mk--consistency { --cat: var(--consistency); }
+  .mk--logic { --cat: var(--logic); }
+
+  /* ---- Panel weryfikacji ---- */
+  .rail {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-float);
+    display: flex;
+    flex-direction: column;
+  }
+  .rail__bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .rail__count {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .rail__list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px;
+    min-height: 268px;
+  }
+  .rail__foot {
+    padding: 0 14px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .issue {
+    --cat: var(--accent);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: inset 2px 0 0 var(--cat);
+    padding: 12px 14px 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    opacity: 0;
+    transform: translateY(9px);
+    transition: opacity 0.45s ease,
+                transform 0.45s cubic-bezier(0.22, 0.61, 0.36, 1),
+                border-color 0.22s ease, background 0.22s ease;
+  }
+  .issue.is-in { opacity: 1; transform: none; }
+  .issue.is-linked,
+  .issue:hover {
+    border-color: color-mix(in srgb, var(--cat) 42%, transparent);
+    background: var(--elevated);
+  }
+  .issue--grammar { --cat: var(--grammar); }
+  .issue--consistency { --cat: var(--consistency); }
+  .issue--logic { --cat: var(--logic); }
+
+  .issue__cat {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--cat);
+  }
+  .issue__quote {
+    font-family: var(--font-serif);
+    font-size: 14px;
+    color: var(--text-read);
+    margin: 0;
+    line-height: 1.45;
+  }
+  .issue__msg {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--muted);
+    margin: 0;
+  }
+
+  /* Kropki „Checking…" — jedyna animacja w pętli na stronie */
+  .dots { display: inline-flex; gap: 3px; margin-left: 2px; }
+  .dots i {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: blink 1.15s infinite ease-in-out;
+  }
+  .dots i:nth-child(2) { animation-delay: 0.18s; }
+  .dots i:nth-child(3) { animation-delay: 0.36s; }
+  @keyframes blink {
+    0%, 70%, 100% { opacity: 0.18; }
+    35% { opacity: 1; }
+  }
+  .rail.is-done .dots { display: none; }
+
+  /* ---- Trzy kategorie ---- */
+  .checks {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 30px;
+  }
+  .check {
+    --cat: var(--accent);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-top: 16px;
+    border-top: 1px solid color-mix(in srgb, var(--cat) 34%, transparent);
+  }
+  .check--grammar { --cat: var(--grammar); }
+  .check--consistency { --cat: var(--consistency); }
+  .check--logic { --cat: var(--logic); }
+  .check__name {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--cat);
+  }
+
+  /* ---- Pliki ---- */
+  .files {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.92fr);
+    gap: 56px;
+    align-items: center;
+  }
+  .files__copy {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .tree {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.95;
+    color: var(--muted);
+    background: var(--sidebar-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 24px 26px;
+    margin: 0;
+    overflow-x: auto;
+  }
+  .tree b { color: var(--text); font-weight: 500; }
+  .tree .t-dim { color: var(--faint); }
+  .tree .t-hit { color: var(--consistency); }
+
+  /* ---- Pobranie ---- */
+  .get {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-m);
+    align-items: flex-start;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 40px 42px 42px;
+  }
+  .get__status {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+  }
+  .get__dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--logic);
+    flex: none;
+  }
+  .get__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 4px;
+  }
+  .get__plat {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 22px;
+    margin-top: 8px;
+  }
+  .get__plat span { font-family: var(--font-mono); font-size: 11.5px; color: var(--faint); }
+
+  /* ---- Stopka ---- */
+  .foot {
+    border-top: 1px solid var(--border);
+    padding-block: 30px 44px;
+  }
+  .foot__inner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 18px;
+  }
+  .foot__links { margin-left: auto; display: flex; gap: 22px; }
+  .foot__links a {
+    font-size: 13px;
+    color: var(--faint);
+    text-decoration: none;
+    transition: color 0.2s ease;
+  }
+  .foot__links a:hover { color: var(--text); }
+
+  /* ---- Wejścia przy przewijaniu ---- */
+  .reveal {
+    opacity: 0;
+    transform: translateY(14px);
+    transition: opacity 0.7s ease, transform 0.7s cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+  .reveal.is-in { opacity: 1; transform: none; }
+
+  /* ---- Wąskie ekrany ---- */
+  @media (max-width: 900px) {
+    .demo { grid-template-columns: minmax(0, 1fr); }
+    .rail__list { min-height: 0; }
+    .checks { grid-template-columns: minmax(0, 1fr); gap: 26px; }
+    .files { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+    .nav__links { display: none; }
+    :root { --gap-xl: 68px; }
+    .ms { padding: 24px 22px 28px; }
+    .get { padding: 30px 24px 32px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    * {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
+    .reveal { opacity: 1; transform: none; }
+  }
+</style>
+</head>
+
+<body>
+
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="nav" id="nav">
+  <div class="wrap nav__inner">
+    <a class="brand" href="#main">
+      <svg class="brand__mark" viewBox="0 0 1024 1024" aria-hidden="true">
+        <g transform="translate(44.3 74.8) scale(7.54)">
+          <path d="M38 54 L5 31 L7 39 L38 60 Z" fill="#efe6d2"/>
+          <g stroke="#cdc0a5" stroke-width="1.2" stroke-linecap="round">
+            <line x1="13" y1="36" x2="15.5" y2="40"/>
+            <line x1="21" y1="41" x2="23.5" y2="45"/>
+            <line x1="29" y1="46" x2="31.5" y2="50"/>
+          </g>
+          <path d="M88 60 C98 53 108 46 119 41 C115 49 113 55 113 60 C113 65 115 71 119 81 C108 74 98 67 88 64 Z" fill="#4a8ab5"/>
+          <path d="M36 62 C36 53 44 47 56 46 C72 45 90 50 100 60 C90 70 72 75 56 74 C44 73 36 71 36 62 Z" fill="#6fb0da"/>
+          <path d="M40 66 C50 74 66 77 82 73 C66 79 47 76 40 66 Z" fill="#bcdcf0"/>
+          <path d="M56 71 C55 78 59 84 66 85 C61 80 59 76 60 70 Z" fill="#4a8ab5"/>
+          <circle cx="47" cy="58" r="2.5" fill="#0f1216"/>
+        </g>
+      </svg>
+      <span class="brand__name">Narwhal</span>
+    </a>
+    <nav class="nav__links" aria-label="Sections">
+      <a class="nav__link" href="#checks">What it checks</a>
+      <a class="nav__link" href="#files">Your files</a>
+      <a class="nav__link" href="#get">Get Narwhal</a>
+    </nav>
+    <a class="btn" href="https://github.com/tobiamart/narwhal" rel="noopener">GitHub</a>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- ================= HERO — akapit, który sprawdza się sam ================= -->
+  <div class="hero-shell">
+    <span class="glow" aria-hidden="true"></span>
+    <section class="section section--hero">
+      <div class="wrap">
+        <div class="hero__intro">
+          <p class="label">Fact-checking writing tool</p>
+          <h1 class="h-display">It won’t write your book. It will remember it.</h1>
+          <p class="lede">
+            Narwhal never suggests a sentence. It reads the ones you wrote —
+            against every chapter and every note — and marks what contradicts.
+          </p>
+          <div class="hero__actions">
+            <a class="btn btn--primary" href="#get">Get Narwhal</a>
+            <a class="btn" href="#checks">See what it checks</a>
+          </div>
+        </div>
+
+        <div class="demo">
+          <!-- Panel rękopisu -->
+          <article class="pane">
+            <div class="pane__bar">
+              <span class="pane__title">09-the-lamp.md</span>
+              <span class="pane__meta">61 words</span>
+            </div>
+            <p class="ms" id="ms">Miriam turned the brass key twice and the lighthouse door gave way. She had not climbed these stairs since the fire of 1908, when <mark class="mk mk--consistency" data-k="consistency" tabindex="0">she was nine years old</mark> and small enough to hide beneath the lamp housing. Out past the headland <mark class="mk mk--logic" data-k="logic" tabindex="0">the beam still swung its slow arc</mark>, the way it had every night for forty years. She reached for the railing and the salt-eaten iron <mark class="mk mk--grammar" data-k="grammar" tabindex="0">come away in her hand</mark>.</p>
+          </article>
+
+          <!-- Panel weryfikacji -->
+          <aside class="rail" id="rail" aria-live="polite">
+            <div class="rail__bar">
+              <span class="label">Verification</span>
+              <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span class="rail__count" id="count">Checking</span>
+            </div>
+            <div class="rail__list" id="list">
+              <article class="issue issue--consistency" data-k="consistency">
+                <span class="issue__cat">Consistency</span>
+                <blockquote class="issue__quote">“she was nine years old”</blockquote>
+                <p class="issue__msg">Your notes give Miriam’s birth as March 1902. The 1908 fire would make her six.</p>
+              </article>
+              <article class="issue issue--logic" data-k="logic">
+                <span class="issue__cat">Logic</span>
+                <blockquote class="issue__quote">“the beam still swung its slow arc”</blockquote>
+                <p class="issue__msg">Chapter 4 decommissions the light in 1931. This scene is set in 1947, so the lamp is dark.</p>
+              </article>
+              <article class="issue issue--grammar" data-k="grammar">
+                <span class="issue__cat">Grammar</span>
+                <blockquote class="issue__quote">“come away in her hand”</blockquote>
+                <p class="issue__msg">The chapter is in past tense. Use “came”.</p>
+              </article>
+            </div>
+            <div class="rail__foot">
+              <button class="btn" type="button" id="recheck">Check text</button>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ================= TRZY KATEGORIE ================= -->
+  <section class="section section--rule" id="checks">
+    <div class="wrap">
+      <div class="section__head reveal">
+        <p class="label">What it checks</p>
+        <h2 class="h-section">Three kinds of wrong, kept apart.</h2>
+        <p class="body-text">
+          A misspelling and a broken timeline are not the same problem and do not
+          deserve the same colour. Narwhal sorts by the nature of the error, not
+          by where the contradicting fact happened to live.
+        </p>
+      </div>
+
+      <div class="checks reveal">
+        <div class="check check--grammar">
+          <span class="check__name">Grammar</span>
+          <p class="body-text">
+            Agreement, tense, punctuation. Narwhal detects the language of the
+            chapter first, so it corrects the language you are actually writing
+            in — not the one your notes are in.
+          </p>
+        </div>
+        <div class="check check--consistency">
+          <span class="check__name">Consistency</span>
+          <p class="body-text">
+            A fact here that a fact elsewhere denies. Every other chapter and
+            every note you keep — characters, world, bibliography — is read as
+            context before this sentence is judged.
+          </p>
+        </div>
+        <div class="check check--logic">
+          <span class="check__name">Logic</span>
+          <p class="body-text">
+            Events that cannot happen in the order you put them, or that break a
+            rule your world has already set. The sentence is fine; what it
+            describes is not.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PLIKI ================= -->
+  <section class="section section--rule" id="files">
+    <div class="wrap files">
+      <div class="files__copy reveal">
+        <p class="label">Your files</p>
+        <h2 class="h-section">Your book is a folder of Markdown files.</h2>
+        <p class="body-text">
+          Chapters and notes are plain <code>.md</code> on your own disk. Open
+          them in any editor, back them up like any other folder, and leave
+          whenever you want — there is no database and no account holding your
+          text.
+        </p>
+        <p class="body-text">
+          Nothing is sent anywhere until you press Check text. The API key that
+          talks to the model never ships inside the app.
+        </p>
+      </div>
+      <pre class="tree reveal"><b>the-lamp/</b>
+├── project.json      <span class="t-dim">title, chapter order</span>
+├── <b>chapters/</b>
+│   ├── 01-the-harbour.md
+│   ├── <span class="t-hit">02-a-birth-in-march.md</span>
+│   ├── 04-the-light-goes-out.md
+│   └── 09-the-lamp.md
+└── <b>notes/</b>
+    ├── characters.md
+    └── the-island.md</pre>
+    </div>
+  </section>
+
+  <!-- ================= POBRANIE ================= -->
+  <section class="section section--rule" id="get">
+    <div class="wrap">
+      <div class="get reveal">
+        <p class="label">Get Narwhal</p>
+        <h2 class="h-section">Not released yet.</h2>
+        <p class="body-text" style="max-width: 46em;">
+          Narwhal runs on macOS and Windows, and is still in development. Follow
+          the repository to see where it stands — the first release will land here.
+        </p>
+        <div class="get__status">
+          <span class="get__dot" aria-hidden="true"></span>
+          <span class="label" style="color: var(--muted);">In development</span>
+        </div>
+        <div class="get__actions">
+          <a class="btn btn--primary" href="https://github.com/tobiamart/narwhal" rel="noopener">Watch on GitHub</a>
+        </div>
+        <div class="get__plat">
+          <span>macOS · Apple silicon and Intel</span>
+          <span>Windows 10 and 11</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap foot__inner">
+    <span class="label">narwhal.ink</span>
+    <span class="foot__links">
+      <a href="#checks">What it checks</a>
+      <a href="#files">Your files</a>
+      <a href="https://github.com/tobiamart/narwhal" rel="noopener">GitHub</a>
+    </span>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var order = ['consistency', 'logic', 'grammar'];
+    var rail = document.getElementById('rail');
+    var count = document.getElementById('count');
+    var recheck = document.getElementById('recheck');
+    var marks = Array.prototype.slice.call(document.querySelectorAll('.mk'));
+    var issues = Array.prototype.slice.call(document.querySelectorAll('.issue'));
+    var timers = [];
+
+    function byKey(list, k) {
+      return list.filter(function (n) { return n.dataset.k === k; });
+    }
+
+    function show(k) {
+      byKey(marks, k).forEach(function (n) { n.classList.add('is-marked'); });
+      byKey(issues, k).forEach(function (n) { n.classList.add('is-in'); });
+    }
+
+    // Sekwencja odtwarza strumień z serwera: błędy pojawiają się po kolei,
+    // nie wszystkie naraz.
+    function runCheck() {
+      timers.forEach(clearTimeout);
+      timers = [];
+      marks.forEach(function (n) { n.classList.remove('is-marked'); });
+      issues.forEach(function (n) { n.classList.remove('is-in'); });
+      rail.classList.remove('is-done');
+      count.textContent = 'Checking';
+
+      if (reduce) {
+        order.forEach(show);
+        rail.classList.add('is-done');
+        count.textContent = '3 issues';
+        return;
+      }
+
+      order.forEach(function (k, i) {
+        timers.push(setTimeout(function () {
+          show(k);
+          count.textContent = (i + 1) + (i === 0 ? ' issue' : ' issues');
+          if (i === order.length - 1) rail.classList.add('is-done');
+        }, 700 + i * 900));
+      });
+    }
+
+    recheck.addEventListener('click', runCheck);
+
+    // Najechanie na fragment podświetla jego kartę i odwrotnie — tak samo,
+    // jak dymek i panel wiążą się w aplikacji.
+    function link(from, to) {
+      from.forEach(function (n) {
+        var k = n.dataset.k;
+        function on() { byKey(to, k).forEach(function (m) { m.classList.add('is-linked'); }); }
+        function off() { byKey(to, k).forEach(function (m) { m.classList.remove('is-linked'); }); }
+        n.addEventListener('mouseenter', on);
+        n.addEventListener('mouseleave', off);
+        n.addEventListener('focus', on);
+        n.addEventListener('blur', off);
+      });
+    }
+    link(marks, issues);
+    link(issues, marks);
+
+    // Wejścia sekcji przy przewijaniu
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) {
+          e.target.classList.add('is-in');
+          io.unobserve(e.target);
+        }
+      });
+    }, { rootMargin: '0px 0px -12% 0px', threshold: 0.08 });
+    document.querySelectorAll('.reveal').forEach(function (n) { io.observe(n); });
+
+    // Kreska pod paskiem nawigacji dopiero po odklejeniu od góry
+    var nav = document.getElementById('nav');
+    var sentinel = new IntersectionObserver(function (e) {
+      nav.classList.toggle('is-stuck', !e[0].isIntersecting);
+    }, { threshold: 1 });
+    var top = document.createElement('span');
+    top.style.cssText = 'position:absolute;top:0;height:1px;width:1px;';
+    document.body.prepend(top);
+    sentinel.observe(top);
+
+    if (reduce) { runCheck(); }
+    else { setTimeout(runCheck, 420); }
+  })();
+</script>
+
+</body>
+</html>

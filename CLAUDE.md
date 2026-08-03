@@ -211,6 +211,40 @@ ten proxy (`app/src/lib/ai.ts`, `PROXY_URL`).
   (oczekiwane `mode:"live"`, `auth:"on"`). `PROXY_URL` w `app/src/lib/ai.ts`
   przełącza się sam: localhost w dev, produkcja w buildzie.
 
+## Strona `narwhal.ink` (`web/`)
+
+Landing pod korzeniem domeny — **osobny Worker** od proxy AI (`narwhal-site`
+vs `narwhal-proxy`). Rozdzielone celowo: strona nie ma powodu dzielić limitów
+tempa ani sekretów z endpointem `/verify`, a ruch statyczny na Workers jest
+nielimitowany, więc landing nie rusza budżetu CPU proxy.
+
+- **Bez frameworka i bez builda.** Jeden plik `web/public/index.html` (style
+  i skrypt inline), obok `narwhal.svg` (favicon) i `og.png` (podgląd linku,
+  kopia ikony aplikacji). Astro albo Vite dokładać dopiero przy **drugiej
+  podstronie** — dla jednej strony build byłby czystym kosztem.
+- **Paleta jest skopiowana z `app/src/styles.css`** do bloku `:root` na górze
+  pliku. Przy zmianie motywu w aplikacji trzeba ją przenieść ręcznie — to
+  świadomy koszt zamiast budowania współdzielonego pakietu tokenów dla dwóch
+  plików. Motyw wyłącznie ciemny, bo aplikacja jest ciemna.
+- **Hero to działające demo, nie zrzut ekranu**: akapit rękopisu z trzema
+  prawdziwymi błędami (`consistency` — data urodzenia sprzeczna z notatkami,
+  `logic` — świecąca latarnia wygaszona w innym rozdziale, `grammar` — „come"
+  zamiast „came"). Podkreślenia rysują się sekwencyjnie, karty dokują z prawej
+  — odwzorowanie strumienia NDJSON z `/verify`. Kategorie używają tych samych
+  tokenów `--grammar` / `--consistency` / `--logic`, co aplikacja.
+- **Typografia koduje podział z aplikacji**: serif (`--font-serif`) to głos
+  rękopisu, sans (`--font-ui`) głos narzędzia, mono (`--font-mono`) metadane
+  i ścieżki. Nie mieszać ról — w hero ten kontrast jest nośnikiem znaczenia.
+- Uruchamianie: `npm install` i `npm run dev` w `web/` (wrangler dev),
+  publikacja `npm run deploy`. **Przed pierwszym wdrożeniem** trzeba usunąć
+  w panelu Cloudflare wiszące rekordy A dla `narwhal.ink` i `www` — inaczej
+  `custom_domain = true` zgłosi konflikt przy zakładaniu DNS.
+- Przyciski prowadzą do `github.com/tobiamart/narwhal`. Repozytorium pod tą
+  nazwą **jeszcze nie istnieje** (zostało skasowane 2026-08-03, ma wrócić) —
+  do tego czasu linki dają 404.
+- Sekcja „Get Narwhal" mówi „Not released yet" i **nie wspomina o podpisie
+  kodu** — świadoma decyzja właściciela, nie przeoczenie.
+
 ## Język
 
 - **UI aplikacji po angielsku** (etykiety, tooltipy, błędy, dialogi, tagline

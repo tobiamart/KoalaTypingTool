@@ -1,0 +1,13 @@
+{
+  "name": "narwhal-site",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Landing page for narwhal.ink — static assets served by a Cloudflare Worker",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4"
+  }
+}
