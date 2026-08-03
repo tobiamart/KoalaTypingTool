@@ -363,6 +363,8 @@ Dwa rodzaje, o różnym losie przy klonowaniu repozytorium.
   sprawdzanie zajętych portów, budowanie instalatorów, pułapki per platforma.
 - **`verify`** — sprawdzenie zmiany od statyki po realne wywołanie fact-checku
   (typecheck → testy → strumień NDJSON → kategorie błędów → prompt cache).
+- **`publish`** — wypchnięcie „eleganckiej wersji" do publicznego repozytorium
+  `tobiamart/narwhal` (patrz sekcja „Dwa repozytoria" niżej).
 
 **Globalne — poza repo, `git pull` ich NIE przyniesie** (`~/.agents/skills/`
 z dowiązaniem w `~/.claude/skills/`). Po przesiadce na drugą maszynę trzeba je
@@ -408,6 +410,29 @@ wymagają zbudowanej aplikacji.
 **Nie commituj ani nie pushuj za użytkownika — on robi commity sam.** Zawsze podawaj
 gotowe komendy, ale ich nie wykonuj. `.gitignore` ignoruje `node_modules/`, `target/`,
 `dist/`, oraz artefakty (`*.exe`, `*.msi`, `*.dmg`, `.app`…).
+
+### Dwa repozytoria
+
+Projekt jest publikowany w dwóch miejscach i to jest świadome — GitHub nie umie
+ukryć pojedynczych plików, więc rozdziału na „robocze" i „publiczne" nie da się
+zrobić wewnątrz jednego repozytorium.
+
+| Repo | Rola | Zawartość |
+|---|---|---|
+| `tobiamart/KoalaTypingTool` | codzienna praca, pełna historia | wszystko |
+| `tobiamart/narwhal` | wersja publiczna, „elegancka" | tylko to, co potrzebne do kompilacji i działania |
+
+Publiczne repo dostaje `app/`, `server/`, `README.md` i `.gitignore`. Poza nim
+zostają `CLAUDE.md`, `TODO.md`, `.claude/`, `web/`, `scripts/` oraz pomocniki
+`*.bat` / `*.ps1`. Lista mieszka w tablicy `PATHS` w `scripts/publish-narwhal.sh`
+— **dopisanie tam ścieżki jest decyzją o upublicznieniu.**
+
+Publikacja jest **ręczna i rzadka**, nie sprzężona z commitami tutaj: robi się ją,
+gdy stan jest pewny. Skrypt bierze zawartość z `HEAD` (nie ze stanu roboczego),
+czyści katalog docelowy do gołego `.git` i rozpakowuje tam wybrane ścieżki, więc
+usunięcie pliku tutaj usuwa go także tam. Historia publiczna jest własna i płaska
+— historia z KoalaTypingTool nigdy tam nie idzie. Szczegóły i lista kontrolna:
+skill `publish`.
 
 ## Co dalej
 
