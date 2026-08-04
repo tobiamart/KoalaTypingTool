@@ -12,10 +12,11 @@
 name = "narwhal-site"
 compatibility_date = "2026-07-01"
 
-# Ruch statyczny na Workers jest nielimitowany i nie liczy się do limitu
-# żądań, więc strona nie rusza rachunku ani budżetu CPU proxy.
-[assets]
-directory = "./public"
+# UWAGA: `routes` i `workers_dev` muszą stać PRZED pierwszym nagłówkiem tabeli
+# (`[assets]`). W TOML każdy klucz po nagłówku należy do tej tabeli, więc
+# przeniesienie ich niżej cicho wpycha je do `[assets]` — wrangler ostrzega
+# („Unexpected fields found in assets field"), ignoruje oba i wdraża stronę
+# bez domeny, za to na *.workers.dev.
 
 # Korzeń domeny i www. `custom_domain = true` sprawia, że wrangler sam
 # zakłada rekord DNS i zamawia certyfikat przy pierwszym wdrożeniu.
@@ -31,6 +32,11 @@ routes = [
 
 # Świadomie bez adresu *.workers.dev — tak samo jak w server/wrangler.toml.
 workers_dev = false
+
+# Ruch statyczny na Workers jest nielimitowany i nie liczy się do limitu
+# żądań, więc strona nie rusza rachunku ani budżetu CPU proxy.
+[assets]
+directory = "./public"
 
 # Port podglądu. Domyślny port wranglera to 8787, a na nim siedzi serwer proxy
 # (`server/`), więc bez tego ustawienia `npm run dev` w obu katalogach naraz
