@@ -199,6 +199,35 @@ function blockLength(items: { title: string; content: string }[] | undefined): n
   return total;
 }
 
+/**
+ * Czyta ciało żądania jako tekst, przerywając po przekroczeniu `maxBytes`.
+ * Zwraca `null`, gdy limit padł — wtedy wołający odpowiada 413.
+ *
+ * Powód, dla którego nie wystarczy `c.req.json()`: sprawdzenie nagłówka
+ * Content-Length omija żądanie z `Transfer-Encoding: chunked`, bo tam tego
+ * nagłówka po prostu nie ma. Bez licznika po stronie strumienia pułapem
+ * zostaje limit Cloudflare (100 MB), a każdy taki bajt to czas CPU Workera.
+ */
+async function readBounded(req: Request, maxBytes: number): Promise<string | null> {
+  if (!req.body) return "";
+  const reader = req.body.getReader();
+  const decoder = new TextDecoder();
+  let out = "";
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      // Przestań pobierać resztę — dalsze bajty nic już nie zmienią.
+      await reader.cancel();
+      return null;
+    }
+    out += decoder.decode(value, { stream: true });
+  }
+  return out + decoder.decode();
+}
+
 function authenticate(c: Context<{ Bindings: Env }>): Auth {
   const expected = c.env.NARWHAL_AUTH_TOKEN;
   // Bramka wyłączona — lokalny wrangler dev ma działać bez konfiguracji.
@@ -234,16 +263,28 @@ app.post("/verify", async (c) => {
 
   // Odrzuć zbyt duże ciało przed parsowaniem — parsowanie kilkumegabajtowego
   // JSON-a samo w sobie kosztuje czas CPU, którego na darmowym planie jest 10 ms.
+  //
+  // Content-Length to tylko szybka ścieżka: nagłówka nie ma w żądaniu chunked,
+  // a klient może go zaniżyć. Prawdziwym ogranicznikiem jest readBounded(),
+  // które liczy bajty w miarę czytania i przerywa po przekroczeniu progu.
   const declaredBytes = Number(c.req.header("Content-Length") ?? 0);
   if (declaredBytes > MAX_BODY_BYTES) {
     return c.json({ error: "Request too large." }, 413);
   }
 
+  const raw = await readBounded(c.req.raw, MAX_BODY_BYTES);
+  if (raw === null) {
+    return c.json({ error: "Request too large." }, 413);
+  }
+
   let body: VerifyRequest;
   try {
-    body = await c.req.json<VerifyRequest>();
+    body = JSON.parse(raw) as VerifyRequest;
   } catch {
     return c.json({ error: "Invalid JSON body." }, 400);
+  }
+  if (!body || typeof body !== "object") {
+    return c.json({ error: "Expected { text: string, notes: [] }." }, 400);
   }
   if (typeof body.text !== "string" || !Array.isArray(body.notes)) {
     return c.json({ error: "Expected { text: string, notes: [] }." }, 400);

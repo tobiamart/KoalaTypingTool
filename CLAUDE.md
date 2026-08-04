@@ -52,7 +52,17 @@ Stare manifesty z `type` wczytują się dalej; pole znika przy pierwszym zapisie
   rozdziałem. Świadome: przenumerowanie oznaczałoby lawinę zmian nazw na dysku
   przy każdym ruchu, a nazwa pliku nie jest źródłem prawdy o kolejności;
   ignorowane błędy fact-checku w `ignored-issues.json` w folderze projektu
-  (klucz: plik + typ + cytat)
+  (klucz: plik + typ + cytat).
+  **`project.json` jest wejściem niezaufanym** — przychodzi razem z folderem
+  projektu, a foldery wymienia się między autorami jak zwykłe pliki. Każda
+  ścieżka z manifestu przechodzi przez `isSafeRelPath()` (brak segmentu `..`,
+  brak odwrotnego ukośnika — na Windows to separator — brak wiodącego `/`),
+  a `loadProject()` odsiewa wpisy, które tego nie przechodzą. Bez tego wpis
+  `"file": "../../.zshrc"` daje **zapis dowolnego pliku w `$HOME`**: natywny
+  `join()` skraca `..` leksykalnie (`Component::ParentDir` → `pop`), a scope
+  pluginu fs sięga całego katalogu domowego. Prefiksu `chapters/` ani `notes/`
+  celowo **nie** wymuszamy — projekty z najstarszej wersji trzymały treść
+  w pliku w korzeniu i mają się dalej otwierać
 - `lib/highlight.ts` — mapowanie cytatów z fact-checku na zakresy dokumentu
   (czysta logika, testy w `highlight.test.ts`)
 - `lib/issueHighlight.ts` — dekoracje ProseMirror z tych zakresów (nie zmieniają
@@ -121,6 +131,14 @@ w capabilities); `saveActive` zwraca boolean i błędy zapisu lądują w `error`
 Rust (`app/src-tauri/`): init pluginów (opener, dialog, fs) + `register_spellcheck_defaults()`
 dla macOS — **brak własnych komend** (`invoke`) i tak ma zostać.
 Uprawnienia w `capabilities/default.json` (scope `$HOME/**`).
+
+**Scope musi być szeroki, więc wrażliwe miejsca są wycięte listą `deny`**
+(`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config`, `~/Library/Keychains`,
+`~/Library/LaunchAgents`, pliki startowe powłoki). Projekt może leżeć gdziekolwiek
+w katalogu domowym, a Tauri nie umie rozszerzać scope'u w czasie działania bez
+własnej komendy Rust — czego projekt świadomie unika. `deny` wygrywa nad `allow`,
+więc to jedyna warstwa, która ogranicza skalę szkody, gdyby kiedyś przeciekła
+błędna ścieżka. Nie zdejmować przy dodawaniu funkcji plikowych.
 
 **Przeciąganie (HTML5 DnD) wymaga `"dragDropEnabled": false`** w oknie
 (`tauri.conf.json`). Mimo nazwy ta opcja znaczy „działa **wewnętrzny** system
@@ -191,6 +209,11 @@ ten proxy (`app/src/lib/ai.ts`, `PROXY_URL`).
   odpowiedź 429) oraz limity rozmiaru — 8 MB ciała, 200 tys. znaków rozdziału,
   1,8 mln znaków łącznie (odpowiedź 413). Bez nich jedno żądanie albo jedna
   pętla mogą kosztować dowolnie dużo. Aplikacja tłumaczy 429 i 413 na komunikaty.
+  Limit 8 MB egzekwuje `readBounded()`, licząc bajty w trakcie czytania
+  strumienia — **nie** nagłówek `Content-Length`. Sam nagłówek jest tylko szybką
+  ścieżką odrzucenia: w żądaniu `Transfer-Encoding: chunked` go nie ma, więc
+  wcześniejsza wersja przepuszczała do parsera dowolnie duże ciało (pułapem
+  było dopiero 100 MB Cloudflare), a każdy taki bajt to czas CPU Workera.
   Limity rozmiaru są celowo tak wysokie, **żeby zmieściła się cała spora
   książka**: Sonnet 5 ma okno 1 mln tokenów, a 1,8 mln znaków to ~700 tys.
   tokenów dla polskiego. Konsekwencja: sprawdzenie pełnej książki kosztuje

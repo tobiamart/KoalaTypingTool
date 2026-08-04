@@ -29,8 +29,37 @@ export function slugify(input: string): string {
   return base || "untitled";
 }
 
+/**
+ * Czy ścieżka względna z manifestu wskazuje plik **wewnątrz** folderu projektu?
+ *
+ * `project.json` jest wejściem niezaufanym: leży na dysku obok treści, więc
+ * przychodzi razem z każdym folderem projektu, który użytkownik dostał od kogoś
+ * innego. Bez tego sprawdzenia wpis `"file": "../../.zshrc"` daje odczyt
+ * i **nadpisanie** dowolnego pliku w katalogu domowym — natywny `join()`
+ * skraca „..” leksykalnie (Component::ParentDir → pop), a scope pluginu fs
+ * (`$HOME/**` w capabilities) taką ścieżkę przepuszcza.
+ *
+ * Odrzucamy trzy rzeczy:
+ *  - segment `..` — jedyny sposób na wyjście w górę,
+ *  - odwrotny ukośnik — na Windows jest **separatorem**, więc `chapters\..\..\x`
+ *    ucieka mimo rozbijania po „/”,
+ *  - wiodący ukośnik — ścieżka absolutna zamiast względnej.
+ *
+ * Świadomie **nie** wymuszamy prefiksu `chapters/` ani `notes/`: projekty
+ * z najstarszej wersji trzymały treść w pliku w korzeniu i mają się dalej
+ * otwierać.
+ */
+export function isSafeRelPath(relative: string): boolean {
+  if (!relative || relative.includes("\\")) return false;
+  if (relative.startsWith("/")) return false;
+  return relative.split("/").every((s) => s !== "..");
+}
+
 /** Buduje absolutną ścieżkę pliku wewnątrz projektu z jego ścieżki względnej. */
 async function absPath(project: OpenProject, relative: string): Promise<string> {
+  if (!isSafeRelPath(relative)) {
+    throw new Error(`Invalid file path in project manifest: ${relative}`);
+  }
   // Ścieżki względne trzymamy z "/" — rozbijamy i łączymy przez natywny join.
   const segments = relative.split("/").filter(Boolean);
   return join(project.path, ...segments);
@@ -76,6 +105,22 @@ export async function isProjectFolder(folderPath: string): Promise<boolean> {
   }
 }
 
+/**
+ * Przepuszcza tylko te wpisy manifestu, które da się bezpiecznie otworzyć.
+ *
+ * Odsiewamy zamiast odmawiać otwarcia całego projektu: uszkodzony albo
+ * spreparowany wpis nie może odciąć autora od pozostałych rozdziałów. Wpis
+ * z ucieczką ze ścieżki nie powstaje w aplikacji nigdy, więc jego zniknięcie
+ * nie jest utratą treści użytkownika.
+ */
+function safeRefs(list: unknown): FileRef[] {
+  if (!Array.isArray(list)) return [];
+  return list.filter(
+    (r): r is FileRef =>
+      !!r && typeof r.file === "string" && isSafeRelPath(r.file),
+  );
+}
+
 /** Wczytuje istniejący projekt z folderu. */
 export async function loadProject(folderPath: string): Promise<OpenProject> {
   const manifestPath = await join(folderPath, MANIFEST_NAME);
@@ -84,7 +129,13 @@ export async function loadProject(folderPath: string): Promise<OpenProject> {
   }
   const raw = await readTextFile(manifestPath);
   const manifest = JSON.parse(raw) as ProjectManifest;
-  return { ...manifest, path: folderPath };
+  // Manifest pochodzi z dysku, więc kształt jest sprawdzany, nie zakładany.
+  return {
+    ...manifest,
+    chapters: safeRefs(manifest.chapters),
+    notes: safeRefs(manifest.notes),
+    path: folderPath,
+  };
 }
 
 /**

@@ -290,3 +290,81 @@ describe("ignored issues", () => {
     expect(await storage.loadIgnoredIssues(p)).toEqual([b]);
   });
 });
+
+// Manifest leży na dysku, więc przychodzi razem z folderem projektu dostanym
+// od kogoś innego. Ścieżka z „..” wyprowadziłaby zapis poza projekt — a scope
+// pluginu fs sięga całego $HOME, więc celem może być np. ~/.zshrc.
+describe("ochrona przed ucieczką ze ścieżki projektu", () => {
+  it("isSafeRelPath przepuszcza normalne ścieżki plików projektu", () => {
+    expect(storage.isSafeRelPath("chapters/01-intro.md")).toBe(true);
+    expect(storage.isSafeRelPath("notes/world.md")).toBe(true);
+    // Najstarsze projekty trzymały treść w pliku w korzeniu — nadal ważne.
+    expect(storage.isSafeRelPath("document.md")).toBe(true);
+    // Dwie kropki w nazwie to nie to samo co segment „..”.
+    expect(storage.isSafeRelPath("chapters/rozdzial..1.md")).toBe(true);
+  });
+
+  it("isSafeRelPath odrzuca ucieczki i ścieżki absolutne", () => {
+    expect(storage.isSafeRelPath("../../.zshrc")).toBe(false);
+    expect(storage.isSafeRelPath("chapters/../../../.ssh/id_rsa")).toBe(false);
+    expect(storage.isSafeRelPath("..")).toBe(false);
+    // Backslash jest separatorem na Windows, więc rozbicie po „/” go nie widzi.
+    expect(storage.isSafeRelPath("chapters\\..\\..\\.zshrc")).toBe(false);
+    expect(storage.isSafeRelPath("/etc/passwd")).toBe(false);
+    expect(storage.isSafeRelPath("")).toBe(false);
+  });
+
+  it("writeFile nie zapisuje poza folderem projektu", async () => {
+    const p = await storage.createProject(PARENT, "Book");
+    const evil = { id: "x", title: "Evil", file: "../../.zshrc" };
+    await expect(storage.writeFile(p, evil, "rm -rf /")).rejects.toThrow(
+      /Invalid file path/,
+    );
+    expect(files.has("C:/.zshrc")).toBe(false);
+  });
+
+  it("readFile nie czyta spoza folderu projektu", async () => {
+    const p = await storage.createProject(PARENT, "Book");
+    files.set("C:/secret.txt", "sekret");
+    const evil = { id: "x", title: "Evil", file: "../../secret.txt" };
+    await expect(storage.readFile(p, evil)).rejects.toThrow(/Invalid file path/);
+  });
+
+  it("deleteRef nie kasuje pliku spoza folderu projektu", async () => {
+    const p = await storage.createProject(PARENT, "Book");
+    files.set("C:/secret.txt", "sekret");
+    const evil = { id: "evil", title: "Evil", file: "../../secret.txt" };
+    const withEvil = { ...p, chapters: [...p.chapters, evil] };
+    await expect(storage.deleteRef(withEvil, "chapter", "evil")).rejects.toThrow(
+      /Invalid file path/,
+    );
+    expect(files.has("C:/secret.txt")).toBe(true);
+  });
+
+  it("loadProject odsiewa spreparowane wpisy, zostawiając zdrowe", async () => {
+    const p = await storage.createProject(PARENT, "Book");
+    files.set(
+      `${p.path}/project.json`,
+      JSON.stringify({
+        title: "Book",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        chapters: [
+          { id: "ok", title: "Rozdział 1", file: "chapters/01-a.md" },
+          { id: "evil", title: "Evil", file: "../../.zshrc" },
+        ],
+        notes: [{ id: "n", title: "Notka", file: "notes/../../.bashrc" }],
+      }),
+    );
+    const loaded = await storage.loadProject(p.path);
+    expect(loaded.chapters.map((c) => c.id)).toEqual(["ok"]);
+    expect(loaded.notes).toEqual([]);
+  });
+
+  it("loadProject znosi manifest bez list rozdziałów i notatek", async () => {
+    const p = await storage.createProject(PARENT, "Book");
+    files.set(`${p.path}/project.json`, JSON.stringify({ title: "Book" }));
+    const loaded = await storage.loadProject(p.path);
+    expect(loaded.chapters).toEqual([]);
+    expect(loaded.notes).toEqual([]);
+  });
+});

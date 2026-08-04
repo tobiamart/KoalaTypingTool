@@ -17,7 +17,24 @@
     "fs:allow-exists",
     {
       "identifier": "fs:scope",
-      "allow": [{ "path": "$HOME" }, { "path": "$HOME/**" }]
+      "allow": [{ "path": "$HOME" }, { "path": "$HOME/**" }],
+      "deny": [
+        { "path": "$HOME/.ssh" },
+        { "path": "$HOME/.ssh/**" },
+        { "path": "$HOME/.aws" },
+        { "path": "$HOME/.aws/**" },
+        { "path": "$HOME/.gnupg" },
+        { "path": "$HOME/.gnupg/**" },
+        { "path": "$HOME/.config/**" },
+        { "path": "$HOME/Library/Keychains/**" },
+        { "path": "$HOME/Library/LaunchAgents/**" },
+        { "path": "$HOME/.zshrc" },
+        { "path": "$HOME/.zshenv" },
+        { "path": "$HOME/.zprofile" },
+        { "path": "$HOME/.bashrc" },
+        { "path": "$HOME/.bash_profile" },
+        { "path": "$HOME/.profile" }
+      ]
     }
   ]
 }
