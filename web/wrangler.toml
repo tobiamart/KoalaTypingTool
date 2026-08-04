@@ -32,5 +32,11 @@ routes = [
 # Świadomie bez adresu *.workers.dev — tak samo jak w server/wrangler.toml.
 workers_dev = false
 
+# Port podglądu. Domyślny port wranglera to 8787, a na nim siedzi serwer proxy
+# (`server/`), więc bez tego ustawienia `npm run dev` w obu katalogach naraz
+# kończy się kolizją portów.
+[dev]
+port = 8788
+
 [observability]
 enabled = true

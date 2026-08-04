@@ -235,10 +235,12 @@ nielimitowany, więc landing nie rusza budżetu CPU proxy.
 - **Typografia koduje podział z aplikacji**: serif (`--font-serif`) to głos
   rękopisu, sans (`--font-ui`) głos narzędzia, mono (`--font-mono`) metadane
   i ścieżki. Nie mieszać ról — w hero ten kontrast jest nośnikiem znaczenia.
-- Uruchamianie: `npm install` i `npm run dev` w `web/` (wrangler dev),
+- Uruchamianie: `npm install` i `npm run dev` w `web/` (wrangler dev,
+  **port 8788** wpisany w `[dev]` — domyślny 8787 kolidowałby z serwerem proxy),
   publikacja `npm run deploy`. **Przed pierwszym wdrożeniem** trzeba usunąć
   w panelu Cloudflare wiszące rekordy A dla `narwhal.ink` i `www` — inaczej
-  `custom_domain = true` zgłosi konflikt przy zakładaniu DNS.
+  `custom_domain = true` zgłosi konflikt przy zakładaniu DNS. Cała procedura
+  z pre-flightem i wycofaniem: skill `deploy-site`.
 - Przyciski prowadzą do `github.com/tobiamart/narwhal`. Repozytorium pod tą
   nazwą **jeszcze nie istnieje** (zostało skasowane 2026-08-03, ma wrócić) —
   do tego czasu linki dają 404.
@@ -365,6 +367,11 @@ Dwa rodzaje, o różnym losie przy klonowaniu repozytorium.
   (typecheck → testy → strumień NDJSON → kategorie błędów → prompt cache).
 - **`publish`** — wypchnięcie „eleganckiej wersji" do publicznego repozytorium
   `tobiamart/narwhal` (patrz sekcja „Dwa repozytoria" niżej).
+- **`deploy-site`** — wypuszczenie nowej wersji strony na `narwhal.ink`
+  (Worker `narwhal-site`): pre-flight (walidacja HTML, rozjazd palety względem
+  `app/src/styles.css`), konflikt rekordów DNS przy pierwszym wdrożeniu,
+  weryfikacja po wdrożeniu i wycofanie. **Nie mylić z `publish`** — tamten
+  dotyczy repozytorium, ten samej witryny; nie są sprzężone.
 
 **Globalne — poza repo, `git pull` ich NIE przyniesie** (`~/.agents/skills/`
 z dowiązaniem w `~/.claude/skills/`). Po przesiadce na drugą maszynę trzeba je
