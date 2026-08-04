@@ -39,25 +39,31 @@ Publiczne repo obiecuje „sklonuj i skompiluj", więc sprawdź, że to prawda:
 cd app && npx tsc --noEmit && npm test && npx vite build
 ```
 
-Przy zmianach w `server/src/index.ts` — pełna ścieżka ze skilla `verify`,
-nie tylko typecheck.
+Skoro publikowana jest sama aplikacja, sprawdzaj ją tak, jak zobaczy ją ktoś
+z zewnątrz: build musi przejść bez `server/` w zasięgu i bez `.env.local`.
 
 ## Co wychodzi na zewnątrz
 
 Jedynym źródłem prawdy jest tablica `PATHS` w `scripts/publish-narwhal.sh`.
-Dziś: `app/`, `server/`, `README.md`, `.gitignore`.
+Dziś: `app/`, `README.md`, `.gitignore` — czyli sama aplikacja desktopowa.
 
 **Dopisanie ścieżki do `PATHS` jest decyzją o upublicznieniu — nie rób tego
 bez zgody właściciela.** Świadomie poza listą:
 
+- `server/` — proxy AI wraz z `SYSTEM_PROMPT`. Prompt jest wartością produktu,
+  a `wrangler.toml` opisuje infrastrukturę; jedno i drugie zostaje prywatne
 - `CLAUDE.md`, `TODO.md` — notatki robocze, decyzje, koszty API, plany cenowe
 - `.claude/` — skille, bezużyteczne poza repozytorium roboczym
 - `web/` — landing `narwhal.ink`, osobny byt od programu
 - `scripts/`, `*.bat`, `*.ps1` — pomocniki, do budowania niepotrzebne
 
-`server/` jest na liście celowo: produkcyjne `api.narwhal.ink` stoi za bramką
-tokenową, więc bez kodu proxy nikt (łącznie z Tobą na nowej maszynie) nie
-uruchomi weryfikacji na własnym kluczu.
+Konsekwencja braku `server/`: aplikacja zbudowana z publicznego źródła pisze
+i szuka, ale „Check text" dostaje odmowę, bo `api.narwhal.ink` stoi za bramką
+tokenową. **README musi to mówić wprost** — inaczej ktoś będzie szukał błędu
+u siebie. Przy zmianach w opisie backendu sprawdź, czy README dalej jest zgodny
+z prawdą.
+
+Praca z drugiej maszyny idzie przez KoalaTypingTool, nie przez publiczne repo.
 
 ## Pułapki
 

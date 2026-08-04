@@ -422,10 +422,17 @@ zrobić wewnątrz jednego repozytorium.
 | `tobiamart/KoalaTypingTool` | codzienna praca, pełna historia | wszystko |
 | `tobiamart/narwhal` | wersja publiczna, „elegancka" | tylko to, co potrzebne do kompilacji i działania |
 
-Publiczne repo dostaje `app/`, `server/`, `README.md` i `.gitignore`. Poza nim
-zostają `CLAUDE.md`, `TODO.md`, `.claude/`, `web/`, `scripts/` oraz pomocniki
-`*.bat` / `*.ps1`. Lista mieszka w tablicy `PATHS` w `scripts/publish-narwhal.sh`
-— **dopisanie tam ścieżki jest decyzją o upublicznieniu.**
+Publiczne repo dostaje `app/`, `README.md` i `.gitignore` — samą aplikację
+desktopową. Poza nim zostają `server/`, `CLAUDE.md`, `TODO.md`, `.claude/`,
+`web/`, `scripts/` oraz pomocniki `*.bat` / `*.ps1`. Lista mieszka w tablicy
+`PATHS` w `scripts/publish-narwhal.sh` — **dopisanie tam ścieżki jest decyzją
+o upublicznieniu.**
+
+`server/` zostaje prywatny, bo niesie `SYSTEM_PROMPT` (wartość produktu)
+i konfigurację infrastruktury. Cena tej decyzji: aplikacja zbudowana
+z publicznego źródła nie zweryfikuje tekstu — `api.narwhal.ink` stoi za bramką
+tokenową. README mówi to wprost, żeby nikt nie szukał błędu u siebie.
+Praca z drugiej maszyny idzie przez KoalaTypingTool, nie przez publiczne repo.
 
 Publikacja jest **ręczna i rzadka**, nie sprzężona z commitami tutaj: robi się ją,
 gdy stan jest pewny. Skrypt bierze zawartość z `HEAD` (nie ze stanu roboczego),

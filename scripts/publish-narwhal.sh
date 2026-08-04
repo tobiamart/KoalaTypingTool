@@ -30,6 +30,12 @@ BRANCH="main"
 # dist, .env.local, .dev.vars).
 #
 # Świadomie POZA listą:
+#   server/              — kod proxy AI wraz z SYSTEM_PROMPT. Prompt jest
+#                          wartością produktu, a wrangler.toml opisuje
+#                          infrastrukturę; jedno i drugie zostaje prywatne.
+#                          Skutkiem jest to, że sklonowana aplikacja buduje się
+#                          i pisze, ale nie zweryfikuje tekstu — README to mówi
+#                          wprost, żeby nikt nie szukał błędu u siebie.
 #   CLAUDE.md, TODO.md   — notatki robocze, decyzje, koszty API, plany cenowe
 #   .claude/             — skille Claude Code, nieużyteczne poza tym repo
 #   web/                 — landing narwhal.ink, osobny byt od programu
@@ -37,12 +43,10 @@ BRANCH="main"
 #   *.bat, *.ps1         — pomocniki dwuklikowe pod Windows, nie są potrzebne
 #                          do budowania (`npm run tauri build` wystarczy)
 #
-# server/ zostaje na liście celowo: bez niego nie da się uruchomić weryfikacji
-# na własnym kluczu, a produkcyjne api.narwhal.ink jest za bramką tokenową.
-# Repozytorium bez server/ nie spełniałoby obietnicy „skompiluj i działa".
+# Praca z drugiej maszyny idzie przez KoalaTypingTool, nie przez to repo —
+# tu lądują tylko dopieszczone wersje.
 PATHS=(
   app
-  server
   README.md
   .gitignore
 )
