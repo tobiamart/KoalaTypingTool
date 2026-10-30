@@ -30,9 +30,8 @@ BRANCH="main"
 # dist, .env.local, .dev.vars).
 #
 # Świadomie POZA listą:
-#   server/              — kod proxy AI wraz z SYSTEM_PROMPT. Prompt jest
-#                          wartością produktu, a wrangler.toml opisuje
-#                          infrastrukturę; jedno i drugie zostaje prywatne.
+#   server/              — kod proxy AI. Nie należy do „eleganckiej wersji"
+#                          (samo repo KoalaTypingTool jest i tak publiczne).
 #                          Skutkiem jest to, że sklonowana aplikacja buduje się
 #                          i pisze, ale nie zweryfikuje tekstu — README to mówi
 #                          wprost, żeby nikt nie szukał błędu u siebie.

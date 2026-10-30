@@ -443,26 +443,33 @@ gotowe komendy, ale ich nie wykonuj. `.gitignore` ignoruje `node_modules/`, `tar
 
 ### Dwa repozytoria
 
-Projekt jest publikowany w dwóch miejscach i to jest świadome — GitHub nie umie
-ukryć pojedynczych plików, więc rozdziału na „robocze" i „publiczne" nie da się
-zrobić wewnątrz jednego repozytorium.
+Projekt żyje w dwóch repozytoriach. **Oba są publiczne** — KoalaTypingTool
+został upubliczniony 2026-10-30 z konieczności, więc podział nie chroni już
+niczego przed wzrokiem obcych. Dzieli tylko „roboczy bałagan" od „eleganckiej
+wersji".
 
 | Repo | Rola | Zawartość |
 |---|---|---|
 | `tobiamart/KoalaTypingTool` | codzienna praca, pełna historia | wszystko |
-| `tobiamart/narwhal` | wersja publiczna, „elegancka" | tylko to, co potrzebne do kompilacji i działania |
+| `tobiamart/narwhal` | wersja „elegancka" | tylko to, co potrzebne do kompilacji i działania |
 
-Publiczne repo dostaje `app/`, `README.md` i `.gitignore` — samą aplikację
-desktopową. Poza nim zostają `server/`, `CLAUDE.md`, `TODO.md`, `.claude/`,
-`web/`, `scripts/` oraz pomocniki `*.bat` / `*.ps1`. Lista mieszka w tablicy
-`PATHS` w `scripts/publish-narwhal.sh` — **dopisanie tam ścieżki jest decyzją
-o upublicznieniu.**
+**Wszystko, co trafia do commita tutaj, jest publiczne** — także `CLAUDE.md`,
+`TODO.md`, skille i `server/` razem z `SYSTEM_PROMPT`. Po upublicznieniu
+historia została przejrzana: sekretów w niej nie ma (klucz API i token bramki
+żyją wyłącznie w sekretach Cloudflare, `server/.dev.vars` i `app/.env.local`,
+które są gitignorowane). Jawny `SYSTEM_PROMPT` przyjęto świadomie zamiast
+przepisywania historii — wartością produktu jest całość aplikacji, nie tekst
+promptu. Gdyby kiedyś do promptu miało trafić coś naprawdę poufnego, trzymać
+to poza repo (sekret albo zmienna Workera), nie w `index.ts`.
 
-`server/` zostaje prywatny, bo niesie `SYSTEM_PROMPT` (wartość produktu)
-i konfigurację infrastruktury. Cena tej decyzji: aplikacja zbudowana
-z publicznego źródła nie zweryfikuje tekstu — `api.narwhal.ink` stoi za bramką
-tokenową. README mówi to wprost, żeby nikt nie szukał błędu u siebie.
-Praca z drugiej maszyny idzie przez KoalaTypingTool, nie przez publiczne repo.
+Publiczne repo `narwhal` dostaje `app/`, `README.md` i `.gitignore` — samą
+aplikację desktopową. Lista mieszka w tablicy `PATHS`
+w `scripts/publish-narwhal.sh`.
+
+Bez `server/` aplikacja zbudowana ze źródła `narwhal` nie zweryfikuje tekstu —
+`api.narwhal.ink` stoi za bramką tokenową. README mówi to wprost, żeby nikt nie
+szukał błędu u siebie. Praca z drugiej maszyny idzie przez KoalaTypingTool,
+nie przez `narwhal`.
 
 Publikacja jest **ręczna i rzadka**, nie sprzężona z commitami tutaj: robi się ją,
 gdy stan jest pewny. Skrypt bierze zawartość z `HEAD` (nie ze stanu roboczego),

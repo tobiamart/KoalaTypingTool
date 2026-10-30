@@ -47,11 +47,12 @@ z zewnątrz: build musi przejść bez `server/` w zasięgu i bez `.env.local`.
 Jedynym źródłem prawdy jest tablica `PATHS` w `scripts/publish-narwhal.sh`.
 Dziś: `app/`, `README.md`, `.gitignore` — czyli sama aplikacja desktopowa.
 
-**Dopisanie ścieżki do `PATHS` jest decyzją o upublicznieniu — nie rób tego
-bez zgody właściciela.** Świadomie poza listą:
+KoalaTypingTool też jest publiczny (od 2026-10-30), więc lista nie decyduje
+już o tym, co jest jawne, tylko o tym, co należy do „eleganckiej wersji".
+**Zmiany w `PATHS` i tak uzgadniaj z właścicielem.** Świadomie poza listą:
 
-- `server/` — proxy AI wraz z `SYSTEM_PROMPT`. Prompt jest wartością produktu,
-  a `wrangler.toml` opisuje infrastrukturę; jedno i drugie zostaje prywatne
+- `server/` — proxy AI; sklonowana aplikacja ma się budować bez niego,
+  a backend i tak stoi za bramką tokenową
 - `CLAUDE.md`, `TODO.md` — notatki robocze, decyzje, koszty API, plany cenowe
 - `.claude/` — skille, bezużyteczne poza repozytorium roboczym
 - `web/` — landing `narwhal.ink`, osobny byt od programu
@@ -75,7 +76,7 @@ Praca z drugiej maszyny idzie przez KoalaTypingTool, nie przez publiczne repo.
   wierzch" zostawiałoby pliki, których już nie ma.
 - **Historia publiczna jest własna i płaska.** Jeden commit publikacyjny obejmuje
   wszystko, co się zmieniło od poprzedniej publikacji. Nie próbuj przenosić tam
-  historii z KoalaTypingTool — to właśnie ona ma zostać prywatna.
+  historii z KoalaTypingTool — „elegancka wersja" ma mieć własną, czystą historię.
 - **Cokolwiek raz opublikujesz, zostaje w historii publicznego repo.** Usunięcie
   pliku kolejnym commitem nie usuwa go z wcześniejszych. Dlatego podgląd przed
   pushem, a nie po.
