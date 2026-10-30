@@ -5,15 +5,45 @@ porządkujące: *czy Narwhal działa bez terminala?* Dziś nie — fact-check wy
 dwóch procesów i `localhost:8787`. Dopóki to nie jest zamknięte, nowe funkcje
 dokładają wartość do narzędzia, którego nie da się normalnie używać.
 
+## Blok 0 — rozjazd produkcji ze źródłem
+
+Osobno, bo to nie funkcja do dodania, tylko mina. Blokuje każdą pracę nad
+`/verify`: lektura `server/src/index.ts` opisuje **inny kontrakt** niż ten,
+z którym naprawdę rozmawia aplikacja.
+
+- [ ] **Pogodzić wdrożonego Workera ze źródłem** — `api.narwhal.ink` pochodzi
+      z kodu, którego nie ma ani w repo, ani w `origin/main` (potwierdzone
+      2026-09-12 na żywych odpowiedziach). Trzy różnice: health-check zwraca
+      dodatkowe `effort`, linia `done` niesie `language`, a obiekty `issue`
+      **nie mają pola `suggestion`**. Prawdopodobne źródło: niezacommitowane
+      zmiany na maszynie macOS. **Do czasu rozwiązania nie uruchamiać
+      `npm run deploy` w `server/` — wdrożenie stąd cofnęłoby produkcję.**
+      Kontrakt weryfikować realnym wywołaniem, nie czytaniem źródła
+- [ ] **Brak `suggestion` psuje widok** — `Issue` w `app/src/lib/ai.ts` wymaga
+      tego pola, a produkcja go nie odsyła. Karta w panelu pokazuje samą
+      żarówkę bez tekstu (`VerificationPanel.tsx`), a dymek nad fragmentem
+      najpewniej „💡 undefined": `issueHighlight.ts` wkłada `undefined`
+      do atrybutu DOM, więc `tip.sugg` czyta niepusty string „undefined"
+      (przewidziane z kodu, nie potwierdzone kliknięciem). Decyzja do podjęcia:
+      albo ściągnąć kontrakt produkcji do źródła, albo uodpornić aplikację
+      na brak pola — jedno albo drugie, nie oba naraz
+
 ## Blok 1 — „działa po instalacji"
 
-Zamknięty poza dwoma pozycjami, które są decyzjami właściciela, nie kodem.
+Zamknięty poza pozycjami niżej — dwie pierwsze są decyzjami właściciela,
+nie kodem.
 
 - [ ] **Limit wydatków w konsoli Anthropic** — jedyne zabezpieczenie niezależne
       od błędów w naszym kodzie. Klucz jest już na produkcji, więc pilne
 - [ ] **Workers Paid ($5/mies.)** — darmowy plan daje 10 ms CPU na żądanie,
       a samo sparsowanie żądania z całą książką (1,4 MB) trwa dłużej. Bez tego
       sprawdzenia dużych projektów będą kończyć się błędem 1102
+- [ ] **Przenieść nowy token na maszynę macOS** — `NARWHAL_AUTH_TOKEN` został
+      zrotowany 2026-09-12 (poprzednia wartość przepadła, z Cloudflare sekretów
+      nie da się odczytać). Nowa wartość żyje wyłącznie w `app/.env.local`
+      na Windowsie. Do czasu przeniesienia macOS i każda wcześniej zbudowana
+      aplikacja dostają **401** przy „Check text" — objaw wygląda na awarię,
+      a jest brakiem synchronizacji
 
 ## Blok 2 — komfort pisania
 
